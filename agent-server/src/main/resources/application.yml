@@ -1,0 +1,108 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  config:
+    import:
+      - "optional:file:./.env[.properties]"
+      - "optional:file:../.env[.properties]"
+  application:
+    name: agent-server
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:5432/agent_memory?currentSchema=agent_memory,public
+    username: agent
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 5000
+      max-lifetime: 600000
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6380
+      password: ${SPRING_DATA_REDIS_PASSWORD:}
+      timeout: 2s
+  flyway:
+    enabled: true
+    schemas: agent_memory
+    default-schema: agent_memory
+    locations: classpath:db/migration
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  mvc:
+    async:
+      request-timeout: 300000
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
+
+logging:
+  level:
+    com.agentops: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+# ================= Agent 运行配置 =================
+agent:
+  # 模型接入：mock（无 key 可跑通全流程）| openai（OpenAI 兼容 /v1/chat/completions）
+  model:
+    provider: openai
+    api-key: ${MODEL_API_KEY:}
+    api-url: https://api.deepseek.com/v1/chat/completions
+    chat-model: deepseek-flash
+    embedding-provider: ollama
+    embedding-base-url: ${OLLAMA_BASE_URL:http://127.0.0.1:11434}
+    embedding-model: ${OLLAMA_EMBEDDING_MODEL:bge-m3:latest}
+    embedding-dimensions: 1024
+    timeout-seconds: 60
+    max-retries: 2
+  # 任务预算（文档 17.1 初始配额）
+  budget:
+    max-model-attempts: 128
+    max-tool-attempts: 512
+    max-total-tokens: 1000000
+    max-output-tokens-per-call: 2000
+    max-cost-micros: 1000000
+    currency: CNY
+    run-wall-timeout-minutes: 120
+  # Worker 租约（文档 16.3）
+  lease:
+    duration-seconds: 30
+    renew-interval-millis: 10000
+  # 调度器扫描间隔
+  scheduler:
+    poll-interval-millis: 500
+    scan-interval-millis: 1000
+    max-concurrent-runs: 4
+  # 上下文工程（文档 7）
+  context:
+    full-tail-messages: 20
+    summary-trigger-messages: 60
+    max-history-tokens: 24000
+    recall-memories: 6
+  # 工具默认超时
+  tools:
+    default-timeout-seconds: 30
+    max-result-bytes: 8192
+  # 产物存储
+  artifacts:
+    dir: ./data/artifacts
+    max-upload-bytes: 20971520
+  # SSE
+  events:
+    poll-interval-millis: 200
+    heartbeat-seconds: 15
+
+---
+# 可选本地开发覆盖：无 Redis 时禁用缓存（默认启用）
+# agent:
+#   cache:
+#     redis-enabled: false

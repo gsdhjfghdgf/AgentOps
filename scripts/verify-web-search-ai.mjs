@@ -1,0 +1,13 @@
+import{randomUUID}from'node:crypto'
+import{writeFileSync}from'node:fs'
+import assert from'node:assert/strict'
+const base='http://127.0.0.1:8080/api',headers={'X-Tenant-Id':randomUUID(),'X-User-Id':randomUUID(),'Content-Type':'application/json'},delay=ms=>new Promise(r=>setTimeout(r,ms))
+async function api(p,m='GET',v){const r=await fetch(base+p,{method:m,headers,...(v===undefined?{}:{body:JSON.stringify(v)})});const text=await r.text();assert.ok(r.ok,p+':'+text.slice(0,300));return text?JSON.parse(text):null}
+await api('/memory-settings','PUT',{enabled:false});const session=await api('/sessions','POST',{title:'真实AI网页来源核验'}),task=await api('/sessions/'+session.sessionId+'/runs','POST',{message:'请先用web_search搜索“张雪峰 去世 传闻”，从结果里挑一份非百科的原文用web_read读取。用两三句话说明本次实际核验到了什么，附实际来源链接和来源日期；只有成功取得的原文支持的内容才能当作结论，失败则说明未完成核验，不能凭空判断是谣言或已确认平安。不修改文件、不发送消息，最多两次搜索和两个网页，避免扩展范围。'})
+let state;const approvals=new Set()
+try{
+ for(let i=0;i<1200;i++){state=await api('/runs/'+task.runId);if(state.status==='succeeded')break;assert.ok(!['failed','timed_out','budget_exceeded','waiting_reconcile','waiting_user'].includes(state.status),JSON.stringify(state));if(state.status==='waiting_approval')for(const approval of(await api('/runs/'+task.runId+'/approvals')).approvals){if(approvals.has(approval.approvalId))continue;approvals.add(approval.approvalId);assert.equal(approvals.size,1);await api('/approvals/'+approval.approvalId+'/decision','POST',{decision:'approved'})}await delay(150)}
+ assert.equal(state.status,'succeeded');const messages=(await api('/sessions/'+session.sessionId+'/messages?limit=100')).messages,tools=messages.filter(m=>m.role==='tool').flatMap(m=>{try{return[JSON.parse(m.content)]}catch{return[]}}),searches=tools.filter(t=>Array.isArray(t.results)),pages=tools.filter(t=>t.status==='ok'&&typeof t.content==='string'&&t.content.length>100&&t.url),answer=messages.findLast(m=>m.kind==='candidate')?.content||''
+ assert.ok(searches.length>0&&searches.some(s=>s.results.length>0));assert.ok(pages.length>0,'real AI must read an actual article');assert.ok(pages.some(p=>answer.includes(new URL(p.url).hostname)),'answer must cite a successfully read source')
+ writeFileSync('agent-server/.runtime/web-search-real-ai.json',JSON.stringify({passed:true,runId:task.runId,searches:searches.length,readPages:pages.length,networkApprovals:approvals.size,tokenUsed:state.tokenUsed,sourceCited:true},null,2));writeFileSync('agent-server/.runtime/web-search-real-ai-answer.txt',answer);console.log('PASS real default AI searches the full subject, reads an original page, cites the read source and shares one network permission')
+}finally{if(state?.status!=='succeeded')try{await api('/runs/'+task.runId+'/cancel','POST')}catch{}}

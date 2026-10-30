@@ -1,0 +1,52 @@
+const {app,BrowserWindow,ipcMain}=require('electron')
+const {createServer}=require('http'),{randomUUID}=require('crypto'),{execFileSync}=require('child_process')
+const fs=require('fs'),path=require('path')
+const root=path.resolve(__dirname,'..'),runtime=path.resolve(root,'../agent-server/.runtime'),directory=fs.mkdtempSync(path.join(runtime,'desktop-project-qa-'))
+fs.writeFileSync(path.join(directory,'readme.md'),'# Native project QA\n');execFileSync('git',['init','--template=','-q',directory])
+const tenant=randomUUID(),user=randomUUID(),base='http://127.0.0.1:8080/api',headers={'X-Tenant-Id':tenant,'X-User-Id':user,'Content-Type':'application/json'}
+const delay=ms=>new Promise(r=>setTimeout(r,ms));let origin=''
+app.setPath('userData',path.join(runtime,'workbench-ui-profile'));app.disableHardwareAcceleration()
+ipcMain.handle('agentops:select-project',()=>directory)
+async function api(route,method='GET',body){const r=await fetch(base+route,{method,headers,...(body?{body:JSON.stringify(body)}:{})});if(!r.ok)throw Error(route+': '+r.status+' '+await r.text());return r.json()}
+const website=createServer((q,r)=>{r.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});r.end('<!doctype html><title>Browser screenshot QA</title><style>body{font:24px system-ui;background:#eff5f1;padding:60px;color:#264f38}h1{font-size:48px}</style><h1>真实浏览器预览</h1><p id="status">Starting…</p><script>setTimeout(()=>document.getElementById("status").textContent="Dynamic JavaScript rendered successfully",60)</script>')})
+const fixture=createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;const b=JSON.parse(raw);let message={content:'[]'},finish='stop';if(b.tools){const outputs=b.messages.filter(m=>m.role==='tool');const name=!outputs.length?'browser_open':outputs.length===1?'browser_screenshot':'finish_task',args=!outputs.length?{url:origin}:outputs.length===1?{}:{answer:'真实浏览器已打开动态页面，并保存了截图。'};message={content:null,tool_calls:[{id:randomUUID(),type:'function',function:{name,arguments:JSON.stringify(args)}}]};finish='tool_calls'}res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({choices:[{finish_reason:finish,message}],usage:{prompt_tokens:40,completion_tokens:20}}))})
+app.whenReady().then(async()=>{let win;try{
+ await new Promise(r=>website.listen(0,'127.0.0.1',r));origin='http://127.0.0.1:'+website.address().port;await new Promise(r=>fixture.listen(0,'127.0.0.1',r))
+ await api('/model-settings','PUT',{url:'http://127.0.0.1:'+fixture.address().port+'/v1',apiKey:'fixture',model:'desktop-workbench',clearKey:false})
+ const skill={name:'ui-node-guide',description:'UI dependency and history QA',keywords:'ui',content:'Requires Node 22+\nVERSION_ONE',sourceUrl:''};await api('/skills','POST',skill);await api('/skills','POST',{...skill,content:'Requires Node 22+\nVERSION_TWO'})
+ const archive=process.argv.includes('--source')?root:path.join(root,'release/win-unpacked/resources/app.asar');win=new BrowserWindow({show:false,width:1400,height:1000,webPreferences:{preload:path.join(archive,'electron/preload.cjs'),offscreen:true,backgroundThrottling:false}})
+ win.webContents.session.webRequest.onBeforeSendHeaders({urls:[base+'/*']},(d,c)=>c({requestHeaders:{...d.requestHeaders,...headers}}))
+ const js=async code=>{const result=await win.webContents.executeJavaScript('(async()=>{try{return {value:await(async()=>{'+code+'})()}}catch(error){return {error:String(error)}}})()');if(result.error)throw Error('UI step '+code+' :: '+result.error);return result.value}
+ async function wait(code){for(let i=0;i<800;i++){if(await js('return '+code))return;await delay(150)}throw Error('UI timeout '+code)}
+ async function fill(selector,value){await js(`const el=document.querySelector(${JSON.stringify(selector)});el.value=${JSON.stringify(value)};el.dispatchEvent(new Event('input',{bubbles:true}));`)}
+ async function picture(name){await delay(300);fs.writeFileSync(path.join(runtime,name),(await win.webContents.capturePage()).toPNG())}
+ await win.loadFile(path.join(archive,'dist/index.html'));await wait("!!document.querySelector('.add-project')")
+ await js("document.querySelector('.add-project').click()")
+ await wait("!!document.querySelector('.attach-project')");await js("document.querySelector('.attach-project').click()")
+ await wait("!!document.querySelector('.project-root') && !document.querySelector('.attach-project').disabled")
+ if(!await js('return document.querySelector(".project-root").textContent.toLowerCase().includes('+JSON.stringify(directory.toLowerCase())+')'))throw Error('Native picker did not attach selected directory')
+ await fill('.project-dialog input[placeholder*="5173"]',origin);await js("Array.from(document.querySelectorAll('.project-dialog button')).find(b=>b.textContent.includes('保存预览源')).click()")
+ for(let i=0;i<40;i++){if((await api('/projects')).selected.previewOrigin===origin)break;await delay(100)}
+ if((await api('/projects')).selected.previewOrigin!==origin)throw Error('Local preview origin not saved')
+ await picture('desktop-project-git.png');await js("Array.from(document.querySelectorAll('.project-dialog header button')).find(b=>b.textContent.includes('关闭')).click()")
+ await wait("!document.querySelector('.project-dialog')");await js("document.querySelector('.project-new').click()");await wait("!!document.querySelector('.session-item') && !document.querySelector('.composer-input').disabled")
+ await fill('.composer-input','BROWSER_UI_QA');await js("document.querySelector('.send').click()")
+ await wait("document.querySelector('.approve')?.textContent.includes('访问互联网')")
+ await js("document.querySelector('.apv-actions .btn-primary').click()")
+ await wait("document.querySelector('.artifact-preview img')?.naturalWidth>0 && document.querySelector('.run-top')?.textContent.includes('已完成')")
+ await picture('desktop-browser-screenshot.png');await js("document.querySelector('.artifact-preview').click()")
+ await wait("!!document.querySelector('.image-overlay img')");await picture('desktop-browser-full-preview.png');await js("document.querySelector('[aria-label=关闭截图预览]').click()")
+ console.log('PASS native project picker, Git panel, saved local preview origin and authenticated real screenshot preview/lightbox')
+ await js("Array.from(document.querySelectorAll('.tab')).find(b=>b.textContent.includes('工具与技能')).click()")
+ await wait("document.querySelectorAll('.tool-card').length===48");await js("Array.from(document.querySelectorAll('.cap-tabs button')).find(b=>b.textContent.includes('技能库')).click()")
+ await wait("!!document.querySelector('.check-dependencies')");await js("Array.from(document.querySelectorAll('.skill-card')).find(c=>c.textContent.includes('ui-node-guide')).querySelector('.check-dependencies').click()")
+ await wait("document.querySelector('.dependency-dialog')?.textContent.includes('运行时检查通过')")
+ await picture('desktop-skill-dependencies.png')
+ await js("Array.from(document.querySelectorAll('.dependency-dialog button')).find(b=>b.textContent.includes('恢复此版本')).click()")
+ await wait("Array.from(document.querySelectorAll('.dependency-dialog button')).some(b=>b.textContent.includes('确认恢复'))")
+ await js("Array.from(document.querySelectorAll('.dependency-dialog button')).find(b=>b.textContent.includes('确认恢复')).click()")
+ await wait("document.querySelector('.dependency-dialog')?.textContent.includes('已恢复所选技能版本')")
+ if(!(await api('/capabilities')).skills.find(s=>s.name==='ui-node-guide').content.includes('VERSION_ONE'))throw Error('UI rollback did not restore saved content')
+ console.log('PASS private runtime dependency status and skill version rollback in '+(process.argv.includes('--source')?'source':'packaged')+' UI')
+ await api('/sessions','DELETE');await api('/model-settings','DELETE');win.destroy();website.close();fixture.close();app.exit(0)
+}catch(e){console.error(e?.stack||String(e));if(win)win.destroy();website.close();fixture.close();app.exit(1)}})
