@@ -80,7 +80,11 @@ public class AuthService {
         String client=ua.contains("electron/")?"AgentOps 桌面端":ua.contains("edg/")?"Edge":ua.contains("chrome/")?"Chrome":ua.contains("firefox/")?"Firefox":ua.contains("safari/")?"Safari":ua.equals("node")?"API 客户端":"网页客户端";
         return platform+" · "+client;
     }
-    static String username(String value){if(value==null||!value.matches("[a-zA-Z][a-zA-Z0-9_.-]{2,31}"))throw new IllegalArgumentException("用户名须为3～32位字母、数字或._-，以字母开头");return value.toLowerCase(Locale.ROOT);}
+    static String username(String value){
+        if(value==null||value.length()>32||!value.matches("[\\p{IsHan}a-zA-Z][\\p{IsHan}a-zA-Z0-9_.-]{2,31}"))
+            throw new IllegalArgumentException("用户名须为3～32位中文、字母、数字或 . _ -，以中文或字母开头");
+        return value.toLowerCase(Locale.ROOT);
+    }
     static String displayName(String value){if(value==null||value.isBlank()||value.codePointCount(0,value.length())>24||value.codePoints().anyMatch(Character::isISOControl))throw new IllegalArgumentException("显示名称须为1～24个字符，不含控制字符");return value.strip();}
     static void validatePasswordInput(String value){if(value==null||value.isEmpty()||value.length()>128)throw new IllegalArgumentException("密码长度须为1～128个字符");}
     static void validatePassword(String value){validatePasswordInput(value);if(value.length()<10||value.isBlank())throw new IllegalArgumentException("密码至少10位，建议使用不易猜测的长密码");}

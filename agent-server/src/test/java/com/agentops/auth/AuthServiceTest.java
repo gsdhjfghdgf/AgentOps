@@ -70,9 +70,27 @@ class AuthServiceTest {
         var hash=org.mockito.ArgumentCaptor.forClass(String.class);verify(repo).password(eq(accountId),hash.capture());assertThat(encoder.matches("another-new-password",hash.getValue())).isTrue();
     }
     @Test void usernameDisplayNameAndPasswordBoundariesFailBeforePersistence(){
-        for(String invalid:List.of("ab","../root","用户名","a".repeat(33)))assertThatThrownBy(()->service.register(invalid,"名字",password,false,true,"ip")).isInstanceOf(IllegalArgumentException.class);
+        for(String invalid:List.of("ab","../root","中文","a".repeat(33),"1中文","_用户名","用户名 空格","abc\n","用户\u200d名","用户'--"))assertThatThrownBy(()->service.register(invalid,"名字",password,false,true,"ip")).isInstanceOf(IllegalArgumentException.class);
         for(String invalid:List.of("","name\n","名".repeat(25)))assertThatThrownBy(()->service.register("tester",invalid,password,false,true,"ip")).isInstanceOf(IllegalArgumentException.class);
         for(String invalid:List.of("short"," ".repeat(10),"a".repeat(129)))assertThatThrownBy(()->service.register("tester","名字",invalid,false,true,"ip")).isInstanceOf(IllegalArgumentException.class);
         verify(repo,never()).insert(any(),any(),anyString(),anyString(),anyString());
+    }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings={"有点小烦","用户名","用户_A-1.2","𠮷小明","User.Name-1"})
+    void chineseAndMixedUsernamesUseTheSameCanonicalFormForRegistrationAndLogin(String username){
+        String expected=username.toLowerCase(Locale.ROOT);
+        when(repo.insert(any(),any(),anyString(),anyString(),anyString())).thenAnswer(i->new AccountRepo.Account(accountId,i.getArgument(0),i.getArgument(1),i.getArgument(2),i.getArgument(3),i.getArgument(4),now));
+        var profile=service.register(username,"测试用户",password,false,true,"127.0.0.1");
+        assertThat(profile.username()).isEqualTo(expected);
+        var saved=new AccountRepo.Account(profile.id(),profile.tenantId(),profile.userId(),expected,"测试用户",encoder.encode(password),now);
+        when(repo.byUsername(expected)).thenReturn(Optional.of(saved));when(repo.required(accountId,true)).thenReturn(saved);
+        assertThat(service.login(username,password,false,"desktop","127.0.0.1").account()).isEqualTo(profile);
+        assertThatThrownBy(()->service.register(username,"重复账号",password,false,true,"127.0.0.1"))
+                .isInstanceOfSatisfying(ResponseStatusException.class,e->assertThat(e.getStatusCode().value()).isEqualTo(409));
+    }
+    @Test void usernameLengthRemainsBoundedForChineseAndSupplementaryCharacters(){
+        assertThat(AuthService.username("中".repeat(32))).hasSize(32);
+        assertThatThrownBy(()->AuthService.username("中".repeat(33))).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(()->AuthService.username("𠮷".repeat(17))).isInstanceOf(IllegalArgumentException.class);
     }
 }

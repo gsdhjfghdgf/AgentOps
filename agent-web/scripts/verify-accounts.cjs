@@ -24,6 +24,12 @@ app.whenReady().then(async()=>{let win
   async function signIn(password){await wait('document.querySelector("#account-username")');await fill('#account-username',data.username);await fill('#account-password',password);await click('.account-submit');await wait('document.querySelector(".shell")')}
   async function openProfile(section){await click('.profile-main');await wait('document.querySelector(".profile-dialog")');if(section){await js('Array.from(document.querySelectorAll(".profile-layout nav button")).find(b=>b.textContent.includes('+JSON.stringify(section)+')).click()');await wait('document.querySelector(".profile-content h3")?.textContent==='+JSON.stringify(section))}}
   await win.loadFile(path.join(archive,'dist/index.html'));await wait('document.querySelector("#account-username")')
+  await fill('#account-username','1无效账号');await click('.account-submit');await wait('document.querySelector("#account-username[aria-invalid=true]")')
+  assert.ok((await js('return document.querySelector("#account-username-help").textContent')).includes('以中文或字母开头'))
+  assert.equal(await js('return getComputedStyle(document.querySelector("#account-username-help")).color'),'rgb(180, 59, 59)')
+  for(const username of ['有点小烦','用户_A-1.2','𠮷小明','Existing_User']){
+   await fill('#account-username',username);assert.equal(await js('return document.querySelector("#account-username").checkValidity()'),true,username+' should pass browser validation')
+  }
   fs.writeFileSync(path.join(runtime,'accounts-login-'+label+'.png'),(await win.webContents.capturePage()).toPNG())
   await fill('#account-username',data.username);await fill('#account-password','incorrect-password');await click('.account-submit');await wait('document.querySelector(".account-error")')
   await signIn(data.password)
@@ -55,10 +61,10 @@ app.whenReady().then(async()=>{let win
   await openProfile();await click('.profile-layout nav .logout');await wait('document.querySelector("#account-username")')
   // Exercise registration in the real UI; a separate account must see an empty workspace.
   await click('.account-switch button');await wait('document.querySelector("#account-name")')
-  await fill('#account-username','ui_'+randomUUID().slice(0,8));await fill('#account-name','新用户');await fill('#account-password','New-'+randomUUID());
+  await fill('#account-username','新用户_'+randomUUID().slice(0,8));await fill('#account-name','新用户');await fill('#account-password','New-'+randomUUID());
   const password=await js('return document.querySelector("#account-password").value');await fill('#account-confirm',password)
   await click('.account-submit');await wait('document.querySelector(".shell")');assert.equal(await js('return document.querySelectorAll("[data-session-id]").length'),0)
-  const result={passed:true,label,registration:true,login:true,profileSaved:true,encryptedAutoLogin:true,passwordChanged:true,sessionDevices:true,conversationExported:true,answerCopied:true,authenticatedStreaming:true,accountIsolation:true,xssBlocked:true,externalImagesBlocked:true}
+  const result={passed:true,label,chineseUsername:true,usernameFormatGuidance:true,registration:true,login:true,profileSaved:true,encryptedAutoLogin:true,passwordChanged:true,sessionDevices:true,conversationExported:true,answerCopied:true,authenticatedStreaming:true,accountIsolation:true,xssBlocked:true,externalImagesBlocked:true}
   fs.writeFileSync(path.join(runtime,'accounts-ui-'+label+'.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));win.destroy();app.exit(0)
  }catch(error){console.error(error.stack);if(win&&!win.isDestroyed()){fs.writeFileSync(path.join(runtime,'accounts-ui-failed-'+label+'.png'),(await win.webContents.capturePage()).toPNG());win.destroy()}app.exit(1)}
 })

@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url'
 const base=process.env.ACCOUNTS_TEST_BASE||'http://127.0.0.1:18080'
 assert.equal(new URL(base).port,'18080','Refusing to run registration tests against a production backend')
 const password='Fixture-'+randomUUID(),nextPassword='Changed-'+randomUUID(),suffix=randomUUID().slice(0,8)
-const alice='alice_'+suffix,bob='bob_'+suffix;let checks=0
+const alice='alice_'+suffix,bob='用户_'+suffix;let checks=0
 const registrationKeyFile=fileURLToPath(new URL('../agent-server/.runtime/accounts-test-registration.key',import.meta.url))
 const registrationKey=readFileSync(registrationKeyFile,'utf8').trim()
 async function request(path,{method='GET',body,token,expected=200,extra={}}={}){
