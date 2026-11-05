@@ -78,7 +78,8 @@ public class RunRepo {
     }
 
     public static boolean isPublicWebTool(String tool) {
-        return "web_search".equals(tool) || "web_read".equals(tool) || "skill_preview".equals(tool) || "browser_open".equals(tool);
+        return "web_search".equals(tool) || "web_read".equals(tool) || "skill_preview".equals(tool) || "browser_open".equals(tool)
+                || "image_search".equals(tool) || "image_download".equals(tool);
     }
     public static boolean isBrowserInteraction(String tool){return "browser_click".equals(tool)||"browser_fill".equals(tool);}
     public boolean hasSandboxPermission(Principal p,UUID run){return Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM run_sandbox_permissions WHERE tenant_id=? AND user_id=? AND run_id=?)",Boolean.class,p.tenantId(),p.userId(),run));}

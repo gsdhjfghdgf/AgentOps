@@ -27,13 +27,29 @@ public class OpenAiChatClient {
     private static final Logger log = LoggerFactory.getLogger(OpenAiChatClient.class);
 
     private final RestClient rest;
+    private final RestClient streamingRest;
     private final AgentProperties props;
     private final Json json;
+    private final java.util.function.LongSupplier nanoTime;
 
     public OpenAiChatClient(RestClient restClient, AgentProperties props, Json json) {
+        this(restClient, restClient, props, json, System::nanoTime);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OpenAiChatClient(@org.springframework.beans.factory.annotation.Qualifier("restClient") RestClient restClient,
+                            @org.springframework.beans.factory.annotation.Qualifier("streamingRestClient") RestClient streamingRestClient,
+                            AgentProperties props, Json json) {
+        this(restClient, streamingRestClient, props, json, System::nanoTime);
+    }
+
+    OpenAiChatClient(RestClient restClient, RestClient streamingRestClient, AgentProperties props, Json json,
+                     java.util.function.LongSupplier nanoTime) {
         this.rest = restClient;
+        this.streamingRest = streamingRestClient;
         this.props = props;
         this.json = json;
+        this.nanoTime = nanoTime;
     }
 
     /** 模型不可用类异常：携带是否可重试与服务端建议等待时间。 */
@@ -41,17 +57,24 @@ public class OpenAiChatClient {
         private final boolean retryable;
         private final Long suggestedWaitSeconds;
         private final String code;
+        private final ChatUsage reportedUsage;
 
         public ModelUnavailableException(String message, boolean retryable, Long suggestedWaitSeconds, Throwable cause) {
             this(message,retryable,suggestedWaitSeconds,cause,"MODEL_NETWORK_ERROR");
         }
         public ModelUnavailableException(String message, boolean retryable, Long suggestedWaitSeconds, Throwable cause,String code) {
+            this(message,retryable,suggestedWaitSeconds,cause,code,null);
+        }
+        public ModelUnavailableException(String message, boolean retryable, Long suggestedWaitSeconds, Throwable cause,
+                                          String code, ChatUsage reportedUsage) {
             super(message, cause);
             this.retryable = retryable;
             this.suggestedWaitSeconds = suggestedWaitSeconds;
             this.code=code;
+            this.reportedUsage=reportedUsage;
         }
         public String code(){return code;}
+        public ChatUsage reportedUsage(){return reportedUsage;}
 
         public boolean retryable() {
             return retryable;
@@ -66,7 +89,10 @@ public class OpenAiChatClient {
     }
 
     public record ChatResult(String content, List<com.agentops.model.ModelPort.ToolCall> toolCalls,
-                             ChatUsage usage, boolean complete) {
+                             ChatUsage usage, boolean complete, String finishReason) {
+        public ChatResult(String content, List<ModelPort.ToolCall> toolCalls, ChatUsage usage, boolean complete) {
+            this(content,toolCalls,usage,complete,complete?"stop":null);
+        }
     }
 
     /** 单次 chat/completions 请求（非流式；引擎需要完整工具调用与 usage 元数据，文档 20.3）。 */
@@ -89,7 +115,9 @@ public class OpenAiChatClient {
         } catch (RestClientResponseException e) {
             throw httpFailure(e.getStatusCode().value(),e.getResponseHeaders()==null?null:e.getResponseHeaders().getFirst("retry-after"),e);
         } catch (org.springframework.web.client.ResourceAccessException e) {
-            throw new ModelUnavailableException("模型请求网络异常，请检查连接",true,null,e);
+            boolean timeout = isTimeout(e);
+            throw new ModelUnavailableException(timeout ? "模型响应超时" : "模型请求网络异常，请检查连接",
+                    true, null, e, timeout ? "MODEL_TIMEOUT" : "MODEL_NETWORK_ERROR");
         }
     }
 
@@ -123,29 +151,102 @@ public class OpenAiChatClient {
     public ChatResult stream(ModelSettingsService.ChatConfig config,List<ModelPort.ModelMessage> messages,
                              List<Map<String,Object>> tools,int maxOutputTokens,ModelPort.ExecutionControl control,
                              java.util.function.Consumer<ChatStreamAccumulator.Part> publish){
-        var body=requestBody(config,messages,tools,maxOutputTokens);body.put("stream",true);body.put("stream_options",Map.of("include_usage",true));
-        var input=new java.util.concurrent.atomic.AtomicReference<java.io.InputStream>();var done=new java.util.concurrent.atomic.AtomicBoolean();var cancelled=new java.util.concurrent.atomic.AtomicBoolean();var timeout=new java.util.concurrent.atomic.AtomicBoolean();
-        Thread runner=Thread.currentThread();var until=java.time.Instant.now().plusSeconds(props.model().timeoutSeconds());
-        var watch=streamWatch.scheduleWithFixedDelay(()->{if(done.get())return;boolean stop=false;try{stop=control.cancellationRequested()||control.exceeded(java.time.Instant.now());}catch(RuntimeException e){stop=true;}
-            boolean expired=java.time.Instant.now().isAfter(until);if((stop||expired)&&!done.get()){cancelled.set(stop);timeout.set(expired);runner.interrupt();var stream=input.get();if(stream!=null)try{stream.close();}catch(java.io.IOException ignored){}}
-        },200,200,java.util.concurrent.TimeUnit.MILLISECONDS);
-        try{
-            if(control.cancellationRequested())throw new ModelPort.Cancelled();
-            return rest.post().uri(config.url()).headers(h->{if(!config.key().isBlank())h.setBearerAuth(config.key());h.setAccept(List.of(org.springframework.http.MediaType.TEXT_EVENT_STREAM,org.springframework.http.MediaType.APPLICATION_JSON));})
-                    .contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(json.write(body)).exchange((request,response)->{
-                        int status=response.getStatusCode().value();if(status<200||status>=300)throw httpFailure(status,response.getHeaders().getFirst("retry-after"),null);
-                        var raw=response.getBody();input.set(raw);String type=Objects.toString(response.getHeaders().getContentType(),"");
-                        if(!type.toLowerCase(java.util.Locale.ROOT).contains("text/event-stream")){byte[] bytes=raw.readNBytes(2_000_001);if(bytes.length>2_000_000)throw new IllegalArgumentException("模型响应过大");return parseChatResult(new String(bytes,java.nio.charset.StandardCharsets.UTF_8));}
-                        var accumulator=new ChatStreamAccumulator();var reader=new java.io.BufferedReader(new java.io.InputStreamReader(raw,java.nio.charset.StandardCharsets.UTF_8));var event=new StringBuilder();String line;int size=0;
-                        while((line=reader.readLine())!=null){if(cancelled.get())throw new ModelPort.Cancelled();if(timeout.get())throw new java.io.IOException("模型响应超时");size+=line.length();if(size>2_000_000)throw new IllegalArgumentException("模型流响应过大");
-                            if(line.startsWith("data:"))event.append(line.substring(5).stripLeading()).append('\n');
-                            else if(line.isBlank()&&!event.isEmpty()){String value=event.toString().strip();event.setLength(0);if(value.equals("[DONE]"))break;accumulator.accept(json.tree(value),publish);}
-                        }
-                        if(!event.isEmpty()&&!event.toString().strip().equals("[DONE]"))accumulator.accept(json.tree(event.toString()),publish);
-                        if(cancelled.get())throw new ModelPort.Cancelled();if(timeout.get())throw new java.io.IOException("模型响应超时");return accumulator.finish();
-                    });
-        }catch(org.springframework.web.client.RestClientException e){if(cancelled.get())throw new ModelPort.Cancelled();throw new ModelUnavailableException(timeout.get()?"模型流式响应超时":"模型流连接中断，请稍后重试",true,null,e,timeout.get()?"MODEL_TIMEOUT":"MODEL_NETWORK_ERROR");
-        }finally{done.set(true);watch.cancel(false);input.set(null);if(cancelled.get()||timeout.get())Thread.interrupted();}
+        var body = requestBody(config, messages, tools, maxOutputTokens);
+        body.put("stream", true); body.put("stream_options", Map.of("include_usage", true));
+        var budget = new StreamTimeoutBudget(props.model().streamTimeouts(), nanoTime);
+        var input = new java.util.concurrent.atomic.AtomicReference<java.io.InputStream>();
+        var done = new java.util.concurrent.atomic.AtomicBoolean();
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        var timeout = new java.util.concurrent.atomic.AtomicReference<StreamTimeoutBudget.Expired>();
+        Thread runner = Thread.currentThread();
+        var watch = streamWatch.scheduleWithFixedDelay(() -> {
+            if (done.get()) return;
+            boolean stop;
+            try { stop = control.cancellationRequested() || control.exceeded(java.time.Instant.now()); }
+            catch (RuntimeException e) { stop = true; }
+            var expired = budget.expired();
+            java.io.InputStream stream;
+            synchronized (input) {
+                if (done.get() || (!stop && expired == null)) return;
+                if (stop) cancelled.set(true);
+                timeout.compareAndSet(null, expired);
+                // Serialize the interrupt with cleanup: never interrupt a worker after
+                // it has returned to JDBC to commit a successful model result.
+                runner.interrupt(); stream = input.get();
+            }
+            if (stream != null) try { stream.close(); } catch (java.io.IOException ignored) { }
+        }, 200, 200, java.util.concurrent.TimeUnit.MILLISECONDS);
+        try {
+            if (control.cancellationRequested()) throw new ModelPort.Cancelled();
+            return streamingRest.post().uri(config.url()).headers(h -> {
+                if (!config.key().isBlank()) h.setBearerAuth(config.key());
+                h.setAccept(List.of(org.springframework.http.MediaType.TEXT_EVENT_STREAM, org.springframework.http.MediaType.APPLICATION_JSON));
+            }).contentType(org.springframework.http.MediaType.APPLICATION_JSON).body(json.write(body)).exchange((request, response) -> {
+                int status = response.getStatusCode().value();
+                if (status < 200 || status >= 300) throw httpFailure(status, response.getHeaders().getFirst("retry-after"), null);
+                var raw = response.getBody(); input.set(raw);
+                checkStreamState(cancelled, timeout, budget);
+                // Observe raw reads, not rendered text: fragmented tool JSON, private
+                // reasoning and heartbeat bytes must not be mistaken for a stalled stream.
+                var tracked = new java.io.FilterInputStream(raw) {
+                    @Override public int read() throws java.io.IOException {
+                        int value = in.read(); budget.receivedBytes(value < 0 ? 0 : 1); return value;
+                    }
+                    @Override public int read(byte[] bytes, int offset, int length) throws java.io.IOException {
+                        int count = in.read(bytes, offset, length); budget.receivedBytes(count); return count;
+                    }
+                };
+                String type = Objects.toString(response.getHeaders().getContentType(), "");
+                if (!type.toLowerCase(java.util.Locale.ROOT).contains("text/event-stream")) {
+                    byte[] bytes = tracked.readNBytes(2_000_001);
+                    checkStreamState(cancelled, timeout, budget);
+                    if (bytes.length > 2_000_000) throw new IllegalArgumentException("模型响应过大");
+                    return parseChatResult(new String(bytes, java.nio.charset.StandardCharsets.UTF_8));
+                }
+                var accumulator = new ChatStreamAccumulator();
+                var reader = new java.io.BufferedReader(new java.io.InputStreamReader(tracked, java.nio.charset.StandardCharsets.UTF_8));
+                var event = new StringBuilder(); String line; int size = 0;
+                while ((line = reader.readLine()) != null) {
+                    checkStreamState(cancelled, timeout, budget);
+                    size += line.length();
+                    if (size > 2_000_000) throw new IllegalArgumentException("模型流响应过大");
+                    if (line.startsWith("data:")) event.append(line.substring(5).stripLeading()).append('\n');
+                    else if (line.isBlank() && !event.isEmpty()) {
+                        String value = event.toString().strip(); event.setLength(0);
+                        if (value.equals("[DONE]")) break;
+                        accumulator.accept(json.tree(value), publish);
+                    }
+                }
+                if (!event.isEmpty() && !event.toString().strip().equals("[DONE]")) accumulator.accept(json.tree(event.toString()), publish);
+                checkStreamState(cancelled, timeout, budget);
+                return accumulator.finish();
+            });
+        } catch (org.springframework.web.client.RestClientException e) {
+            if (cancelled.get()) throw new ModelPort.Cancelled();
+            boolean timedOut = timeout.get() != null || isTimeout(e);
+            if (timedOut) log.warn("模型流式请求超时 kind={} elapsedMs={}",
+                    timeout.get() == null ? "TRANSPORT" : timeout.get(), budget.elapsedMillis());
+            throw new ModelUnavailableException(timedOut ? "模型流式响应超时" : "模型流连接中断，请稍后重试",
+                    true, null, e, timedOut ? "MODEL_TIMEOUT" : "MODEL_NETWORK_ERROR");
+        } finally {
+            synchronized (input) { done.set(true); watch.cancel(false); input.set(null); }
+            if (cancelled.get() || timeout.get() != null) Thread.interrupted();
+        }
+    }
+
+    private static void checkStreamState(java.util.concurrent.atomic.AtomicBoolean cancelled,
+            java.util.concurrent.atomic.AtomicReference<StreamTimeoutBudget.Expired> timeout,
+            StreamTimeoutBudget budget) throws java.io.IOException {
+        if (cancelled.get()) throw new ModelPort.Cancelled();
+        timeout.compareAndSet(null, budget.expired());
+        if (timeout.get() != null) throw new java.io.IOException("模型响应超时");
+    }
+
+    static boolean isTimeout(Throwable error) {
+        for (int depth = 0; error != null && depth < 32; depth++, error = error.getCause())
+            if (error instanceof java.net.http.HttpTimeoutException || error instanceof java.net.SocketTimeoutException
+                    || error instanceof java.util.concurrent.TimeoutException) return true;
+        return false;
     }
 
     /** embedding 请求（OpenAI 兼容 /v1/embeddings）。 */
@@ -240,6 +341,6 @@ public class OpenAiChatClient {
             log.warn("模型输出被截断 finish_reason=length");
         }
         return new ChatResult(content, calls, tree.hasNonNull("usage")
-                ? new ChatUsage(promptTokens, completionTokens) : null, complete);
+                ? new ChatUsage(promptTokens, completionTokens) : null, complete, finishReason);
     }
 }

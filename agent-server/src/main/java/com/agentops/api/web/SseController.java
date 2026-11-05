@@ -29,6 +29,7 @@ public class SseController {
     private final RunEventService events;
     private final AgentProperties props;
     private final Json json;
+    private final com.agentops.auth.AuthService auth;
     private final ExecutorService pool = Executors.newCachedThreadPool(r -> {
         var thread = new Thread(r, "sse-reader");
         thread.setDaemon(true);
@@ -36,28 +37,30 @@ public class SseController {
     });
 
     public SseController(RunRepo runs, RunEventService events, AgentProperties props, Json json) {
+        this(runs,events,props,json,null);
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public SseController(RunRepo runs, RunEventService events, AgentProperties props, Json json,com.agentops.auth.AuthService auth) {
         this.runs = runs;
         this.events = events;
         this.props = props;
         this.json = json;
+        this.auth=auth;
     }
 
     @GetMapping(value = "/api/runs/{runId}/events", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(
-            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader,
-            @RequestHeader(value = "X-User-Id", required = false) String userHeader,
+            @RequestHeader("X-Tenant-Id") String tenant,
+            @RequestHeader("X-User-Id") String user,
             @RequestHeader(value = "Last-Event-ID", required = false) String lastEventId,
-            @RequestParam(value = "tenantId", required = false) String tenantParam,
-            @RequestParam(value = "userId", required = false) String userParam,
             @PathVariable UUID runId,
             @RequestParam(defaultValue = "0") long lastEventSeq,
             HttpServletResponse response) {
-        String tenant = tenantHeader != null ? tenantHeader : tenantParam;
-        String user = userHeader != null ? userHeader : userParam;
-        if (tenant == null || user == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "缺少用户身份");
-        }
         var owner = ApiController.principal(tenant, user);
+        var attributes=org.springframework.web.context.request.RequestContextHolder.getRequestAttributes();
+        var login=attributes instanceof org.springframework.web.context.request.ServletRequestAttributes servlet
+                ? servlet.getRequest().getAttribute(com.agentops.auth.AuthFilter.ACCOUNT):null;
+        UUID loginSession=login instanceof com.agentops.auth.AuthService.Authenticated account?account.sessionId():null;
         long start = cursor(lastEventId, lastEventSeq);
         var initial = runs.findByIdOwner(owner, runId).orElseThrow(() ->
                 new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
@@ -84,6 +87,7 @@ public class SseController {
                     snapshot(emitter, initial, after, true);
                 }
                 while (!closed.get()) {
+                    if(auth!=null&&loginSession!=null&&!auth.active(loginSession))break;
                     var batch = events.replay(owner.tenantId(), runId, after, 100);
                     for (var event : batch) {
                         if (closed.get()) return;

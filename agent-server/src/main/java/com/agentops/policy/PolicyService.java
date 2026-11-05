@@ -77,6 +77,8 @@ public class PolicyService {
      * 执行前再次检查当前权限：批准或故障恢复后同样调用本方法。
      */
     public PolicyDecision evaluate(Principal principal, RunSnapshot run, ToolIntent intent) {
+        if(principal==null||run==null||!principal.equals(run.key().owner()))return PolicyDecision.deny("RUN_OWNER_MISMATCH");
+        if(intent==null||intent.toolName()==null||intent.arguments()==null)return PolicyDecision.deny("INVALID_TOOL_INTENT");
         if (!run.mode().allows(intent.toolName())) return PolicyDecision.deny("MODE_TOOL_DENIED:" + run.mode().value());
         // 第一道：可见性
         var spec = registry.spec(intent.toolName());
@@ -150,7 +152,7 @@ public class PolicyService {
     private String validateArguments(ToolSpec spec, Map<String, Object> arguments) {
         var schema = spec.inputSchema();
         var provided = new LinkedHashMap<String, Object>(arguments == null ? Map.of() : arguments);
-        provided.remove("_raw"); // 供应商返回的非法 JSON 原始串不作为合法参数
+        if(provided.containsKey("_raw"))return "INVALID_ARGUMENT_JSON";
         for (var entry : schema.entrySet()) {
             var prop = entry.getValue();
             Object value = provided.get(entry.getKey());
@@ -158,7 +160,7 @@ public class PolicyService {
                 return "MISSING_ARGUMENT:" + entry.getKey();
             }
             if(value!=null && "string".equals(prop.type()) && !(value instanceof String))return "ARGUMENT_TYPE:"+entry.getKey();
-            int maximum=java.util.Set.of("content","csv","filesJson","stepsJson","argumentsJson").contains(entry.getKey())?24000:4000;
+            int maximum=java.util.Set.of("content","csv","filesJson","stepsJson","argumentsJson","deckJson","changesJson","sheetsJson","dataJson").contains(entry.getKey())?24000:4000;
             if (value != null && "string".equals(prop.type()) && value.toString().length() > maximum) {
                 return "ARGUMENT_TOO_LONG:" + entry.getKey();
             }

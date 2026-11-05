@@ -96,4 +96,9 @@ class SseControllerTest {
                 .andExpect(status().isNotFound());
         verifyNoInteractions(events);
     }
+    @Test void legacyIdentityQueryCannotReplaceAuthenticatedHeaders()throws Exception{
+        mvc.perform(get("/api/runs/{runId}/events",RUN).param("tenantId",OWNER.tenantId().toString()).param("userId",OWNER.userId().toString()))
+                .andExpect(status().isBadRequest());
+        verifyNoInteractions(runs,events);
+    }
 }

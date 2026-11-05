@@ -62,6 +62,15 @@ public class ArtifactRepo {
                 """, mapper(), tenantId, userId, runId);
     }
 
+    public List<ArtifactRow> listReadyByOwnerSession(UUID tenantId, UUID userId, UUID sessionId, int limit) {
+        return jdbc.query("""
+                SELECT object_id, object_key, original_name, mime_type, byte_size, sha256,
+                       kind, state, run_id, created_at
+                FROM artifacts WHERE tenant_id=? AND user_id=? AND session_id=?
+                  AND state='ready' AND deleted_at IS NULL ORDER BY created_at DESC, object_id LIMIT ?
+                """, mapper(), tenantId, userId, sessionId, Math.min(Math.max(limit, 1), 100));
+    }
+
     public void markDeleted(UUID tenantId, UUID objectId) {
         jdbc.update("""
                 UPDATE artifacts SET state='deleted', deleted_at=now()

@@ -28,7 +28,7 @@ public class BrowserService {
         runs.findByIdOwner(p,run).orElseThrow(()->new com.agentops.api.RunApplicationService.NotFoundException("任务不存在"));var session=sessions.get(run);
         if(session!=null){if(!session.owner.equals(p))throw new IllegalArgumentException("浏览器会话不属于当前账号");session.touched=System.currentTimeMillis();return session;}
         if(!create)throw new IllegalArgumentException("请先调用browser_open打开网页");if(sessions.size()>=4)throw new IllegalArgumentException("浏览器并发会话已满，请先关闭其他会话");
-        if(playwright==null){playwright=Playwright.create(new Playwright.CreateOptions().setEnv(Map.of("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD","1")));}
+        if(playwright==null){var env=com.agentops.security.ProcessEnvironment.overrides();env.put("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD","1");playwright=Playwright.create(new Playwright.CreateOptions().setEnv(env));}
         if(browser==null||!browser.isConnected())browser=playwright.chromium().launch(new BrowserType.LaunchOptions().setExecutablePath(runtime.browser().orElseThrow(()->new IllegalArgumentException("未找到Edge或Chrome，请先安装浏览器"))).setChromiumSandbox(true).setHeadless(true).setArgs(List.of("--proxy-bypass-list=<-loopback>","--force-webrtc-ip-handling-policy=disable_non_proxied_udp")));
         var proxy=new GuardedBrowserProxy(projects.previewOriginForRun(p,run));BrowserContext context=null;
         try{

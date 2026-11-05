@@ -1,4 +1,5 @@
 /** Shared transport only: identity, timeouts and concurrent GET coalescing. No business routes. */
+import {accessToken,authGeneration,expireSession} from './authSession'
 const DEV = import.meta.env.DEV
 const injected = typeof window !== 'undefined' ? window.__AGENT_DESKTOP__?.apiBase : undefined
 export const API_BASE = injected || (DEV ? '' : 'http://127.0.0.1:8080')
@@ -8,7 +9,7 @@ export const identity = {
 }
 const pending = new Map<string, Promise<unknown>>()
 let revision = 0
-const ownerKey = () => identity.tenantId + ':' + identity.userId
+const ownerKey = () => identity.tenantId + ':' + identity.userId + ':' + authGeneration()
 export function saveIdentity(tenantId: string, userId: string) {
   identity.tenantId = tenantId
   identity.userId = userId
@@ -18,15 +19,18 @@ export function saveIdentity(tenantId: string, userId: string) {
   pending.clear()
 }
 export function headers(extra?: Record<string, string>): Record<string, string> {
-  return { 'X-Tenant-Id': identity.tenantId, 'X-User-Id': identity.userId, ...extra }
+  return { ...extra, 'X-Tenant-Id': identity.tenantId, 'X-User-Id': identity.userId, ...(accessToken()?{Authorization:'Bearer '+accessToken()}:{}) }
 }
+export class HttpError extends Error {constructor(public status:number,message:string,public code?:string,public requestId?:string){super(message)}}
 export async function parse<T>(response: Response): Promise<T> {
   const text = await response.text()
   let body: unknown
   try { body = text ? JSON.parse(text) : null } catch { body = { message: text } }
   if (!response.ok) {
-    const error = body as { message?: string; error?: string } | null
-    throw new Error(error?.message || error?.error || 'HTTP ' + response.status)
+    const error = body as { message?: string; error?: string;requestId?:string } | null
+    if(response.status===401&&accessToken())expireSession()
+    const message=error?.message || error?.error || 'HTTP ' + response.status
+    throw new HttpError(response.status,message+(error?.requestId?'（错误编号 '+error.requestId+'）':''),error?.error,error?.requestId)
   }
   return body as T
 }

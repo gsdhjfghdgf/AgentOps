@@ -25,7 +25,7 @@ public class McpService {
     public record Input(String name,String url,String apiKey,boolean enabled){@Override public String toString(){return "McpInput[redacted]";}}
     public UUID save(Principal p,Input in){
         if(in.name()==null||in.name().isBlank()||in.name().length()>80||in.url()==null||in.url().length()>1000)throw new IllegalArgumentException("请提供连接名称和MCP端点");
-        URI uri=URI.create(in.url());if(!Set.of("http","https").contains(uri.getScheme())||uri.getHost()==null||uri.getUserInfo()!=null||uri.getFragment()!=null||uri.getQuery()!=null)throw new IllegalArgumentException("MCP端点必须是无账号、查询参数和片段的HTTP(S)地址");
+        URI uri=URI.create(in.url());if(uri.getScheme()==null||!Set.of("http","https").contains(uri.getScheme())||uri.getHost()==null||uri.getUserInfo()!=null||uri.getFragment()!=null||uri.getQuery()!=null)throw new IllegalArgumentException("MCP端点必须是无账号、查询参数和片段的HTTP(S)地址");
         if(!"https".equals(uri.getScheme())&&!Set.of("localhost","127.0.0.1","[::1]").contains(uri.getHost()))throw new IllegalArgumentException("远程MCP需要HTTPS；本机服务可使用HTTP");
         if(in.apiKey()!=null&&(in.apiKey().length()>4000||in.apiKey().contains("\n")||in.apiKey().contains("\r")))throw new IllegalArgumentException("Key无效");
         UUID id=UUID.randomUUID();String key=in.apiKey()==null?"":in.apiKey();

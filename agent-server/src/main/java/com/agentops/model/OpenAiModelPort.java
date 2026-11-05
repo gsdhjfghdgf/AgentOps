@@ -125,7 +125,11 @@ public class OpenAiModelPort implements ModelPort {
 
     private ModelDecision toDecision(OpenAiChatClient.ChatResult result, Consumer<String> provisional) {
         if (!result.complete()) {
-            return new ModelDecision.AskUser(UUID.randomUUID(), "模型输出被截断或未正常结束，请缩小任务范围后重试。");
+            boolean length = "length".equals(result.finishReason());
+            log.warn("模型响应未完整结束 finishReason={} promptTokens={} completionTokens={}", result.finishReason(),
+                    result.usage()==null?-1:result.usage().promptTokens(),result.usage()==null?-1:result.usage().completionTokens());
+            throw new OpenAiChatClient.ModelUnavailableException(length ? "模型达到单次输出上限，未执行不完整工具调用" : "模型响应未完整结束",
+                    true,null,null,length?"MODEL_OUTPUT_TRUNCATED":"MODEL_INVALID_RESPONSE",result.usage());
         }
         if (result.toolCalls() != null && !result.toolCalls().isEmpty()) {
             var finishes = result.toolCalls().stream().filter(c -> "finish_task".equals(c.name())).toList();

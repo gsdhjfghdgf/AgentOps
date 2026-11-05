@@ -2,10 +2,26 @@
 
 基于《Agent 设计与实现文档》（v1.2，35 节）持续完善的单 Agent 应用：
 
-- **后端**：Java 17 + Spring Boot 3.5.4 + PostgreSQL 17(pgvector) + Redis，ReAct 执行循环、租约/检查点/幂等、预算与配额、工具批准（HITL）、SSE 事件流、RAG 知识库、长期记忆、任务级评测。
+- **后端**：Java 17 + Spring Boot 3.5.16 + PostgreSQL 17(pgvector) + Redis，ReAct 执行循环、租约/检查点/幂等、预算与配额、工具批准（HITL）、SSE 事件流、RAG 知识库、长期记忆、任务级评测。
 - **前端**：Electron + Vue3 桌面应用（Windows NSIS 安装包），暖白与低饱和绿的工作空间风格，支持深浅主题。
 
-## 0.1.23：源码与运行入口
+## 0.1.28：正式账号、安全加固与接口清理
+
+- 注册、登录、加密记住登录、退出、个人资料、密码管理及设备会话撤销。界面不再允许手动输入租户/用户身份。
+- 首次使用请在本机桌面端创建账号；需要保留原有会话、项目、知识与模型配置时，勾选“接管本机旧工作空间”。首个账号之外的用户使用独立工作空间。浏览器注册需要管理员提供本机注册凭据，不应公开该凭据文件。
+- API 和流式请求统一认证；增加越权、XSS、SSRF、异常路径、请求限额和子进程环境保护。所有保护的范围及限制见[账号与安全设计](docs/账号与安全设计.md)。
+- 对话支持一键复制和导出 Markdown；个人中心分为资料、偏好、安全、数据管理。
+- 清理无调用的任务查询接口、服务方法、前端封装和旧样式，统一异常映射，构建时检查未使用声明。下线接口与替代方式见[接口清理记录](docs/接口清理记录.md)。
+
+## 0.1.24：文件工具与 PPT 工作流
+
+- 新增 21 个工具，涵盖可编辑 PPT、文档读取、Excel、数据图表、PDF、图片和 ZIP。
+- PPT 支持生成、结构检查、文本修订与逐页预览，原生表格和图表保留编辑能力。
+- 工具页增加分类和示例；任务工作台支持资料上传，PPT 可在程序内翻页预览。
+- 工具相关性加载继续减少无关 Schema；文件使用所属账号的产物 ID，复用权限与路径边界。
+- 具体工具清单、测试方法和限制见 [文件工具与 PPT 工作流](docs/文件工具与PPT工作流.md)。
+
+## 源码与运行入口
 
 - 完整前端源码在 agent-web/src；逐文件导航和运行命令见 [前端说明](agent-web/README.md)。
 - 配置、性能设计与省 Token 用法见 [开发与性能说明](docs/开发与性能说明.md)。
@@ -100,7 +116,7 @@ npm run app:dev
 npm run app
 ```
 
-产出 Windows 安装包（`agent-web/release/AgentOps 智能助手-Setup-0.1.23.exe`）：
+产出 Windows 安装包（`agent-web/release/AgentOps 智能助手-Setup-0.1.24.exe`）：
 
 ```powershell
 npm run dist
@@ -145,24 +161,30 @@ agent:
 ## 五、评测管线（builtin 套件 6/6 通过）
 
 ```powershell
-# 评测接口需要主体头；示例用 curl.exe（PowerShell 的 Invoke-RestMethod 发中文 JSON 会编码损坏）
-$H = @('-H','X-Tenant-Id: 11111111-1111-1111-1111-111111111111','-H','X-User-Id: 22222222-2222-2222-2222-222222222222','-H','Content-Type: application/json; charset=utf-8')
+# 先在桌面端创建账号，再用本人的账号登录；不把密码写入脚本或命令历史。
+$credential = Get-Credential
+$body = @{username=$credential.UserName;password=$credential.GetNetworkCredential().Password} | ConvertTo-Json
+$login = Invoke-RestMethod http://127.0.0.1:8080/api/auth/login -Method Post -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
+$H = @{Authorization='Bearer '+$login.accessToken}
 # 1. 导入内置套件（6 用例：直接回答/销售查询/周报/RAG/模糊澄清/邮件批准）
-curl.exe -s -X POST @H --data-binary "@empty.json" http://127.0.0.1:8080/api/eval/suites/builtin
+$suite = Invoke-RestMethod http://127.0.0.1:8080/api/eval/suites/builtin -Method Post -Headers $H -ContentType application/json -Body '{}'
+$suiteId = $suite.suiteId
 # 2. 运行（同步返回报告；桌面端「评测」页同样可操作）
-curl.exe -s -X POST @H --data-binary "@empty.json" "http://127.0.0.1:8080/api/eval/suites/$suiteId/run"
+Invoke-RestMethod "http://127.0.0.1:8080/api/eval/suites/$suiteId/run" -Method Post -Headers $H -ContentType application/json -Body '{}'
 # 3. 查询报告（用于回归对比）
-curl.exe -s @H "http://127.0.0.1:8080/api/eval/suites/$suiteId/report"
+Invoke-RestMethod "http://127.0.0.1:8080/api/eval/suites/$suiteId/report" -Headers $H
 ```
 
 - 评分规则：normal 类要求 succeeded；ambiguous 类预期 `waiting_user`（澄清而非假设）；permission 类预期 `waiting_approval`（触发批准）。评测器在轮询中识别等待态并立即判定，用例结束后自动取消残留 run。
 - 重复运行同一套件时 trial_no 自动递增（`eval_trials(case_id, trial_no)` 唯一键）。
 
-## 六、身份与多租户（演示约定）
+## 六、账号与身份
 
-- 所有 REST 请求通过 `X-Tenant-Id` / `X-User-Id` 请求头传递已验证主体（默认 `11111111-…` / `22222222-…`，桌面端顶栏「身份设置」可修改）。
-- SSE 因 EventSource 无法携带自定义 Header，同时支持 `?tenantId=&userId=` query 参数。
-- **生产环境必须由网关注入**，前端传入的主体不可信（文档 15.1）。
+- 使用注册、登录、退出、个人资料、密码管理与登录设备管理；首次从本机桌面端创建账号时，可明确接管旧工作空间，保留默认身份原有数据。
+- 桌面端通过本机注册凭据完成账号创建，阻止普通网页通过空 Origin 抢先接管；该凭据由后端生成，只允许当前系统用户读取，不写入源码或日志。
+- 登录使用可过期、可撤销的随机 Bearer 凭据。后端覆盖身份头，客户端填写的 `X-Tenant-Id` / `X-User-Id` 与 SSE 查询参数都不能作为授权依据。
+- SSE 改为带 Authorization 请求头的 fetch 流，凭据不进入网址。桌面端记住登录使用系统加密，浏览器会话只在 sessionStorage 保存；不将密码或登录凭据放入 localStorage。
+- 默认仅监听 `127.0.0.1`。跨主机部署需配置 HTTPS、精确允许来源及注册凭据分发，不能简单对外暴露调试端口。详见 [账号与安全设计](docs/账号与安全设计.md)。
 
 ## 七、关键机制速览（对应文档）
 
@@ -213,7 +235,7 @@ npm test
 npm run build
 ```
 
-本轮不需要新增数据库迁移。当前身份机制仍用于演示，正式部署前需要接入可信登录/网关身份验证。
+上述早期验证对应旧版身份头协议；0.1.28 增加 V23 账号与登录迁移，接口不再接受未登录的身份头访问。新版认证验证使用独立测试数据库与 `scripts/verify-accounts.mjs`，旧身份头联调脚本不能直接当作新版认证验证结果。
 
 实际联调已使用虚拟机 PostgreSQL 17 和 Redis 完成 13 项检查（独立随机租户隔离测试数据），覆盖健康检查、任务完成、历史分页、幂等、补充输入、取消、审批隔离、报告下载、SSE 重放以及并发提交。可在后端启动且使用 mock 模型时复现：
 

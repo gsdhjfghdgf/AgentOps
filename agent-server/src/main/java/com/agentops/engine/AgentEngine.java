@@ -309,12 +309,13 @@ public class AgentEngine {
                 log.warn("模型决策提交失败（版本/租约冲突，已回滚）run={}", snapshot.key().runId());
                 return TickResult.LEASE_LOST;
             }
-            boolean unknown = isOutcomeUnknown(e);
+            Usage reportedUsage = reportedFailureUsage(e);
+            boolean unknown = reportedUsage == null && isOutcomeUnknown(e);
             String errorCode = classifyModelFailure(e);
             log.warn("模型调用失败 run={} code={} unknown={} cause={}",
                     snapshot.key().runId(), errorCode, unknown,e.getClass().getSimpleName());
             coordinator.recordModelFailure(lease, snapshot, attempt.attemptId(),
-                    errorCode, unknown, Usage.unknown(4000, 0));
+                    errorCode, unknown, reportedUsage == null ? Usage.unknown(4000, 0) : reportedUsage);
 
             // 重试退避（文档 27.2）：可重试则 RETRY_WAIT，否则失败
             if (!unknown && !retryable(e)) {
@@ -783,6 +784,13 @@ public class AgentEngine {
             }
         }
         return false;
+    }
+
+    static Usage reportedFailureUsage(Throwable error) {
+        for(int depth=0;error!=null&&depth<32;depth++,error=error.getCause())
+            if(error instanceof com.agentops.model.OpenAiChatClient.ModelUnavailableException model && model.reportedUsage()!=null)
+                return Usage.of(model.reportedUsage().promptTokens(),model.reportedUsage().completionTokens());
+        return null;
     }
 
     private String classifyModelFailure(Throwable e) {

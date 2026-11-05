@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed,ref,useSlots,watch } from 'vue'
+import { computed,ref,useSlots,watch,onBeforeUnmount } from 'vue'
 import type { MessageItem } from '../api'
 import { taskTimeline,splitTaskTimeline } from '../composables/taskTimeline'
 import AppIcon from './AppIcon.vue'
@@ -11,6 +11,10 @@ const entries=computed(()=>taskTimeline(props.messages))
 const parts=computed(()=>splitTaskTimeline(entries.value))
 const hasAnswer=computed(()=>!!props.answerStreaming||!!parts.value.answer)
 const expanded=ref(false)
+const copied=ref(false),copyError=ref('')
+let copyTimer:ReturnType<typeof setTimeout>|undefined
+async function copyAnswer(){copyError.value='';try{await navigator.clipboard.writeText(parts.value.answer?.content||'');copied.value=true;clearTimeout(copyTimer);copyTimer=setTimeout(()=>copied.value=false,2000)}catch{copyError.value='复制失败，请选中文字后使用 Ctrl+C。'}}
+onBeforeUnmount(()=>clearTimeout(copyTimer))
 const operations=computed(()=>parts.value.process.reduce((sum,e)=>sum+(e.type==='activities'?e.activities.length:0),0))
 const elapsed=computed(()=>{const seconds=Math.max(0,Math.floor(props.duration||0));return seconds>=60?`${Math.floor(seconds/60)}分${seconds%60?seconds%60+'秒':''}`:`${seconds}秒`})
 watch(()=>[props.active,hasAnswer.value] as const,([active,answer],previous)=>{
@@ -44,10 +48,11 @@ function activityStatus(result: string|undefined){return result!==undefined?'已
     <slot name="details" />
     </div>
    </details>
-   <section v-if="parts.answer" class="task-final-answer" aria-label="最终回答"><div v-if="parts.answer.kind==='candidate'&&status&&status!=='succeeded'" class="progress-caption">{{ active?'回答已生成，等待校验':'任务未完成 · 以下为待确认内容' }}</div><div class="msg-body" v-html="render(parts.answer.content)"></div></section>
+   <section v-if="parts.answer" class="task-final-answer" aria-label="最终回答"><div v-if="parts.answer.kind==='candidate'&&status&&status!=='succeeded'" class="progress-caption">{{ active?'回答已生成，等待校验':'任务未完成 · 以下为待确认内容' }}</div><div class="msg-body" v-html="render(parts.answer.content)"></div><div class="answer-actions"><button class="btn btn-ghost btn-sm" @click="copyAnswer">{{ copied?'已复制':'复制回答' }}</button><span v-if="copied" class="small muted" role="status">已复制到剪贴板</span><span v-if="copyError" class="err small" role="alert">{{ copyError }}</span></div></section>
   </div>
 </template>
 <style scoped>
+.answer-actions{display:flex;align-items:center;gap:10px;margin-top:16px}
 .task-timeline{position:relative}.task-process>summary{display:flex;align-items:center;flex-wrap:wrap;gap:7px;cursor:pointer;list-style:none;color:var(--txt-3);font-size:12px;line-height:1.8;padding:5px 0 10px;border-bottom:1px solid var(--line)}.task-process>summary::-webkit-details-marker{display:none}.process-elapsed,.process-count{font-size:11px}.process-chevron{transition:transform .15s}.task-process[open] .process-chevron{transform:rotate(90deg)}.process-content{padding:18px 0 6px 20px;border-left:1px solid var(--line);margin-top:16px}.task-process+.task-final-answer{margin-top:24px}.live-commentary{margin-top:20px}.process-content>.live-commentary:first-child{margin-top:0}.task-final-answer>.msg-body :deep(:first-child){margin-top:0}@media(prefers-reduced-motion:reduce){.process-chevron{transition:none}}
 .public-commentary{display:flex;align-items:baseline;gap:10px;color:var(--txt-3)}.public-commentary>svg{flex-shrink:0}.public-commentary .msg-body{font-size:13px;color:var(--txt-2)}.stage-finding{background:var(--ink-1);border:1px solid var(--line);border-radius:12px;padding:16px 18px}.stage-finding header{display:flex;align-items:center;gap:8px;color:var(--green);margin-bottom:12px;font-size:12px}.stage-finding header span{margin-left:auto;color:var(--txt-3);font-size:10px}.stage-finding .msg-body{font-size:13px}.progress-caption{font-size:11px;color:var(--txt-3);margin-bottom:10px}
 .timeline-entry + .timeline-entry { margin-top:20px; }

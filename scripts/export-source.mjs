@@ -11,7 +11,7 @@ const runtime=path.join(root,'agent-server/.runtime')
 mkdirSync(runtime,{recursive:true});mkdirSync(output,{recursive:true})
 const stage=mkdtempSync(path.join(runtime,'source-export-'))
 const excluded=new Set(['node_modules','target','dist','release','.runtime','.git','.idea'])
-const inputs=['README.md','pom.xml','.gitignore','.env.example','docs','scripts','agent-server/pom.xml',
+const inputs=['README.md','pom.xml','.gitignore','.env.example','.mvn','docs','scripts','agent-server/pom.xml',
   'agent-server/src','agent-web/README.md','agent-web/src','agent-web/electron','agent-web/tests','agent-web/scripts',
   'agent-web/package.json','agent-web/package-lock.json','agent-web/index.html','agent-web/tsconfig.json','agent-web/vite.config.ts']
 for(const relative of inputs){

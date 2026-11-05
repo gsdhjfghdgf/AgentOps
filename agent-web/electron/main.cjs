@@ -2,6 +2,7 @@
 const { app, BrowserWindow, shell, ipcMain, dialog, Notification } = require('electron')
 const path = require('path')
 const { installContextMenu } = require('./context-menu.cjs')
+const { installLoginVault } = require('./login-vault.cjs')
 ipcMain.on('agentops:notify',(event,title,body)=>{
   if(!BrowserWindow.fromWebContents(event.sender)||!Notification.isSupported())return
   const n=new Notification({title:String(title).slice(0,120),body:String(body).slice(0,300)})
@@ -19,6 +20,7 @@ ipcMain.on('agentops:theme', (event, theme) => {
 const DEV_URL = process.env.VITE_DEV_SERVER
 // 桌面端直连本地后端；渲染层通过 preload 暴露的 API_BASE 访问
 const API_BASE = process.env.AGENT_API_BASE || 'http://127.0.0.1:8080'
+installLoginVault({app,ipcMain,safeStorage:require('electron').safeStorage,BrowserWindow,apiBase:API_BASE,devUrl:DEV_URL})
 ipcMain.handle('agentops:select-project',async event=>{
   const result=await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender),{title:'选择Agent可以读写的本地项目',properties:['openDirectory']})
   return result.canceled?null:result.filePaths[0]
@@ -38,11 +40,16 @@ function createWindow() {
       additionalArguments: ['--agent-api-base=' + API_BASE],
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
       spellcheck: false,
     },
   })
 
   installContextMenu(win)
+  win.webContents.session.setPermissionRequestHandler((contents,permission,callback)=>callback(contents===win.webContents&&permission==='clipboard-sanitized-write'))
+  win.webContents.session.setPermissionCheckHandler((contents,permission)=>contents===win.webContents&&permission==='clipboard-sanitized-write')
 
 
   if (DEV_URL) {

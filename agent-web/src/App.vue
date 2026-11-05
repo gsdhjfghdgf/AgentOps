@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ChatView from './components/ChatView.vue'
+import AuthView from './components/AuthView.vue'
+import {useAccount} from './composables/useAccount'
 import SessionRunIndicator from './components/SessionRunIndicator.vue'
 const KnowledgeView = defineAsyncComponent(() => import('./components/KnowledgeView.vue'))
 const EvalView = defineAsyncComponent(() => import('./components/EvalView.vue'))
@@ -11,7 +13,8 @@ const CapabilitiesView = defineAsyncComponent(() => import('./components/Capabil
 import ProjectPicker from './components/ProjectPicker.vue'
 const OperationsView = defineAsyncComponent(() => import('./components/OperationsView.vue'))
 import NotificationBell from './components/NotificationBell.vue'
-import { api, identity, listSessions, saveIdentity, createSession, updateSession, deleteSession, clearSessions, type SessionItem, type RunMode } from './api'
+import { api, listSessions, createSession, updateSession, deleteSession, clearSessions, type SessionItem, type RunMode } from './api'
+const {account,initialize}=useAccount()
 
 type Tab = 'chat' | 'knowledge' | 'eval' | 'capabilities' | 'operations'
 
@@ -44,7 +47,7 @@ const sessionGroups=computed(()=>[
   {id:'',name:archived.value?'已归档的普通会话':'普通会话',root:'',items:sessions.value.filter(s=>!s.projectId)},
 ])
 let projectListVersion=0
-async function refreshProjects(){const version=++projectListVersion;try{const result=await api.get<{projects:Project[]}>('/api/projects');if(version===projectListVersion)projects.value=result.projects}catch{/* Connection status is reported by the session request. */}}
+async function refreshProjects(){if(!account.value)return;const version=++projectListVersion;try{const result=await api.get<{projects:Project[]}>('/api/projects');if(version===projectListVersion)projects.value=result.projects}catch{/* Connection status is reported by the session request. */}}
 function pickProject(id:string){draftProjectId.value=id;activeSessionId.value='';tab.value='chat';if(collapsedProjects.value.includes(id))collapsedProjects.value=collapsedProjects.value.filter(p=>p!==id)}
 function toggleProject(id:string){collapsedProjects.value=collapsedProjects.value.includes(id)?collapsedProjects.value.filter(p=>p!==id):[...collapsedProjects.value,id]}
 const backendUp = ref<boolean | null>(null)
@@ -76,10 +79,11 @@ function applyTheme(t: 'dark' | 'light') {
 function toggleTheme() {
   applyTheme(theme.value === 'dark' ? 'light' : 'dark')
 }
-const profileName=ref(localStorage.getItem('agentops-profile-name')||'个人工作空间')
+const profileName=computed(()=>account.value?.displayName||'个人工作空间')
 function openProfile(){menuId.value='';renameId.value='';confirmAction.value=null;showSettings.value=true}
 
 async function refreshSessions() {
+  if(!account.value)return
   const version = ++listVersion
   try {
     const result = await listSessions(query.value, archived.value)
@@ -162,21 +166,22 @@ function sessionTime(value?: string) {
   return value ? new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }) : ''
 }
 
-function saveProfile(value:{name:string;theme:'light'|'dark';tenantId:string;userId:string}) {
-  profileName.value=value.name;localStorage.setItem('agentops-profile-name',value.name);applyTheme(value.theme)
-  showSettings.value = false
-  if(value.tenantId===identity.tenantId&&value.userId===identity.userId)return
-  saveIdentity(value.tenantId,value.userId)
+function saveProfile(value:{name:string;theme:'light'|'dark'}) {applyTheme(value.theme)}
+watch(()=>account.value?.id,()=>{
+  listVersion++;projectListVersion++
+  showSettings.value=false;showModelSettings.value=false;menuId.value='';confirmAction.value=null
   activeSessionId.value = ''
   activeSessionProjectId.value='';query.value='';archived.value=false
   sessions.value = []
   projects.value=[]
   draftProjectId.value=''
+  tab.value='chat';backendUp.value=null
+  if(!account.value)return
   modelsChanged()
   refreshSessions()
   refreshProjects()
   window.dispatchEvent(new Event('agent:identity-changed'))
-}
+})
 
 watch([query, archived], () => {
   listVersion++
@@ -193,14 +198,21 @@ function refreshVisibleSessions(force = false) {
   }
 }
 function focusSessions() { refreshVisibleSessions(true) }
+async function shortcuts(event:KeyboardEvent){
+ if(!account.value||showSettings.value||showModelSettings.value||!event.ctrlKey&&!event.metaKey)return
+ if(event.key.toLowerCase()==='k'){event.preventDefault();tab.value='chat';await nextTick();document.querySelector<HTMLInputElement>('.search-wrap input')?.focus()}
+ else if(event.shiftKey&&event.key.toLowerCase()==='o'){event.preventDefault();activeSessionId.value='';draftProjectId.value='';tab.value='chat';await nextTick();document.querySelector<HTMLTextAreaElement>('.composer textarea')?.focus()}
+}
 onBeforeUnmount(() => {
   listVersion++; projectListVersion++; clearTimeout(searchTimer); clearInterval(statusTimer)
   window.removeEventListener('agent:projects-changed',refreshProjects)
   document.removeEventListener('visibilitychange',focusSessions)
   window.removeEventListener('focus',focusSessions)
+  window.removeEventListener('keydown',shortcuts)
 })
 onMounted(()=>{
-  refreshSessions();refreshProjects();window.addEventListener('agent:projects-changed',refreshProjects)
+  void initialize();window.addEventListener('agent:projects-changed',refreshProjects)
+  window.addEventListener('keydown',shortcuts)
   statusTimer=setInterval(() => refreshVisibleSessions(),3000)
   document.addEventListener('visibilitychange',focusSessions)
   window.addEventListener('focus',focusSessions)
@@ -208,7 +220,8 @@ onMounted(()=>{
 </script>
 
 <template>
-  <div class="shell" :class="{ 'full-page': tab !== 'chat' }">
+  <AuthView v-if="!account" />
+  <div v-else class="shell" :class="{ 'full-page': tab !== 'chat' }">
     <nav class="tabs function-rail" aria-label="功能导航">
       <span class="rail-logo" title="AgentOps"><AppIcon name="spark" :size="24" /></span>
       <button v-for="item in navigation" :key="item.key" class="tab rail-item" :class="{on:tab===item.tab&&(!item.section||operationsSection===item.section)}" :aria-label="item.label" :aria-current="tab===item.tab&&(!item.section||operationsSection===item.section)?'page':undefined" :title="item.label" @click="navigate(item)"><AppIcon :name="item.icon" :size="20" /><span>{{ item.label }}</span></button>

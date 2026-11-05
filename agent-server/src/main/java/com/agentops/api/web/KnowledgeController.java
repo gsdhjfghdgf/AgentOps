@@ -105,6 +105,8 @@ public class KnowledgeController {
                 || req.content()==null || req.content().isBlank() || req.content().length()>2000
                 || (req.kind()!=null && !java.util.Set.of("preference","fact","experience","episode").contains(req.kind())))
             throw new ApiController.ApiException(HttpStatus.BAD_REQUEST,"请提供有效的记忆类型和 1～2000 字的内容");
+        if(req.validForSeconds()!=null&&(req.validForSeconds()<1||req.validForSeconds()>315360000L))throw new ApiController.ApiException(HttpStatus.BAD_REQUEST,"有效期须为1秒到10年之间");
+        if(req.scopeKey()!=null&&(req.scopeKey().isBlank()||req.scopeKey().length()>160))throw new ApiController.ApiException(HttpStatus.BAD_REQUEST,"记忆范围须为1～160字");
         Duration validFor = req.validForSeconds() == null ? null : Duration.ofSeconds(req.validForSeconds());
         return memory.saveExplicit(owner,
                 req.scopeKey() == null ? "user" : req.scopeKey(),

@@ -40,10 +40,13 @@ public class ModelConnectionVerifier {
                 "description","提交连接检测结果","parameters",Map.of("type","object","properties",Map.of(
                         "answer",Map.of("type","string")),"required",List.of("answer"))));
         var streamed=new AtomicBoolean();
+        // Keep configuration probes shorter than the UI's 120s request deadline.
+        // Long-running tasks retain their independent, longer streaming limits.
+        var probeDeadline=Instant.now().plusSeconds(90);
         try {
             var control=new ModelPort.ExecutionControl() {
                 public boolean cancellationRequested(){return false;}
-                public Instant deadlineAt(){return Instant.MAX;}
+                public Instant deadlineAt(){return probeDeadline;}
             };
             var result=client.stream(config,List.of(ModelPort.ModelMessage.user(
                     "AGENTOPS_CONNECTION_CHECK：只调用finish_task，answer填OK，不执行其他操作。")),

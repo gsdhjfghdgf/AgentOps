@@ -118,7 +118,7 @@ public class ProjectService {
     }
     private record GitResult(int code,String text,String warning){}
     private GitResult gitProcess(List<String> args) throws Exception {
-        var builder=new ProcessBuilder(args);builder.environment().put("GIT_OPTIONAL_LOCKS","0");var process=builder.start();var reader=Executors.newFixedThreadPool(2);
+        var builder=new ProcessBuilder(args);com.agentops.security.ProcessEnvironment.sanitize(builder);builder.environment().put("GIT_OPTIONAL_LOCKS","0");var process=builder.start();var reader=Executors.newFixedThreadPool(2);
         var output=reader.submit(()->drain(process.getInputStream()));var warning=reader.submit(()->drain(process.getErrorStream()));
         try{if(!process.waitFor(12,TimeUnit.SECONDS)){process.destroyForcibly();throw new IllegalArgumentException("Git读取超时");}return new GitResult(process.exitValue(),output.get(2,TimeUnit.SECONDS),warning.get(2,TimeUnit.SECONDS));}finally{process.destroy();reader.shutdownNow();}
     }

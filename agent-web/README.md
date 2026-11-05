@@ -4,7 +4,7 @@
 
 ## 开发与构建
 
-需要 Node.js 20 或 22 和 npm：
+需要 Node.js 22.13 或更新的受支持版本和 npm。工程已升级为 Electron 44，旧 Node 20 不能用于本轮打包：
 
     cd agent-web
     npm ci
@@ -12,6 +12,10 @@
     # 或 npm run app:dev，启动 Electron 开发窗口
     npm test
     npm run dist      # Windows 安装包生成到 release
+
+`dist` 会先准备并校验官方 Electron 运行时，再从本地 `node_modules/electron/dist` 打包。若官方二进制下载不可达，可临时设置可信镜像 `ELECTRON_MIRROR`；校验仍使用官方 npm 包附带的 checksums，不关闭校验。
+
+账号界面使用后端正式注册/登录。桌面端自动读取本机注册凭据；浏览器开发时，创建账号需要填写部署管理员提供的注册凭据。不要把注册凭据写入前端源码。详情见 [账号与安全设计](../docs/账号与安全设计.md)。
 
 后端默认 http://127.0.0.1:8080。浏览器开发通过 vite.config.ts 的 /api 代理连接后端。
 更换浏览器开发后端时修改代理目标；更换桌面后端时，在启动桌面进程前设置：

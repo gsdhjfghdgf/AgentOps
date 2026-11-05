@@ -15,7 +15,7 @@ public class ProjectController {
     @PutMapping("/selection") public Map<String,Object> select(@RequestHeader("X-Tenant-Id") String tenant,@RequestHeader("X-User-Id") String user,@RequestBody Selection input){service.repository().select(ApiController.principal(tenant,user),input.projectId());return Map.of("ok",true);}
     @PutMapping("/{id}/preview-origin") public Map<String,Object> preview(@RequestHeader("X-Tenant-Id") String tenant,@RequestHeader("X-User-Id") String user,@PathVariable UUID id,@RequestBody Preview input){
         String origin=input.origin()==null?"":input.origin().strip();if(!origin.isBlank()){
-            URI uri=URI.create(origin);if(!"http".equals(uri.getScheme())||!Set.of("127.0.0.1","localhost").contains(uri.getHost())||uri.getPort()<1024||uri.getPort()>65535||uri.getUserInfo()!=null||uri.getQuery()!=null||uri.getFragment()!=null||!Set.of("","/").contains(uri.getPath()))throw new IllegalArgumentException("预览地址只能是本机开发服务，例如http://127.0.0.1:5173");
+            URI uri=URI.create(origin);if(!"http".equals(uri.getScheme())||uri.getHost()==null||!Set.of("127.0.0.1","localhost").contains(uri.getHost())||uri.getPort()<1024||uri.getPort()>65535||uri.getUserInfo()!=null||uri.getQuery()!=null||uri.getFragment()!=null||!Set.of("","/").contains(uri.getPath()))throw new IllegalArgumentException("预览地址只能是本机开发服务，例如http://127.0.0.1:5173");
             origin="http://"+uri.getHost()+":"+uri.getPort();
         }service.repository().previewOrigin(ApiController.principal(tenant,user),id,origin);return Map.of("ok",true);
     }

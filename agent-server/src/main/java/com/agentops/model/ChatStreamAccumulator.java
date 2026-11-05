@@ -29,6 +29,6 @@ final class ChatStreamAccumulator {
     }
     OpenAiChatClient.ChatResult finish(){
         var result=new ArrayList<ModelPort.ToolCall>();for(var call:calls.values())result.add(new ModelPort.ToolCall(call.id,call.name.toString(),call.arguments.toString()));
-        return new OpenAiChatClient.ChatResult(content.isEmpty()?null:content.toString(),result,usage,"stop".equals(finish)||"tool_calls".equals(finish));
+        return new OpenAiChatClient.ChatResult(content.isEmpty()?null:content.toString(),result,usage,"stop".equals(finish)||"tool_calls".equals(finish),finish);
     }
 }

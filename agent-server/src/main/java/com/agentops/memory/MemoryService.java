@@ -45,6 +45,10 @@ public class MemoryService {
     /** 显式保存（同步 API，立即跨会话生效，文档 6.4）。 */
     public Map<String, Object> saveExplicit(Principal owner, String scopeKey, String memoryKey,
                                             String kind, String content, Duration validFor) {
+        if(scopeKey==null||scopeKey.isBlank()||scopeKey.length()>160||memoryKey==null||memoryKey.isBlank()||memoryKey.length()>160
+                ||kind==null||!java.util.Set.of("preference","fact","experience","episode").contains(kind)||content==null||content.isBlank()||content.length()>2000)
+            throw new IllegalArgumentException("记忆范围、键、类型或内容无效");
+        if(validFor!=null&&(validFor.isNegative()||validFor.isZero()||validFor.compareTo(Duration.ofDays(3650))>0))throw new IllegalArgumentException("记忆有效期须大于0且不超过10年");
         UUID id = repo.upsert(owner.tenantId(), owner.userId(), scopeKey, memoryKey, kind,
                 content, "explicit", 0.8f, validFor == null ? null : Instant.now().plus(validFor));
         long version = repo.memoryVersion(owner.tenantId(), owner.userId());
@@ -68,7 +72,7 @@ public class MemoryService {
                     || !source.text().contains(candidate.evidence()) || candidate.content()==null
                     || candidate.content().isBlank() || candidate.content().length()>500
                     || !candidate.key().matches("[a-zA-Z0-9_.-]{1,80}")
-                    || !java.util.Set.of("preference","fact","experience","episode").contains(candidate.kind()))continue;
+                    || candidate.kind()==null || !java.util.Set.of("preference","fact","experience","episode").contains(candidate.kind()))continue;
             String combined=source.text()+" "+candidate.content();
             if(Pattern.compile("(?i)密码|密钥|口令|password|api[ _-]?key|access[ _-]?token|bearer\\s|secret").matcher(combined).find())continue;
             var saved=repo.upsertAutomatic(owner.tenantId(),owner.userId(),"auto:"+candidate.key(),candidate.kind(),

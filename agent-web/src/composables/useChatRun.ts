@@ -14,6 +14,7 @@ export function modelFailureText(code: string): string {
     :status==='429'?'模型服务限流或配额不足（HTTP 429）。':'模型服务请求失败（HTTP '+status+'）。'
   return ({MODEL_TIMEOUT:'模型响应超时。',MODEL_NETWORK_ERROR:'模型连接中断，未能收到完整回答。',
     MODEL_STREAM_ERROR:'模型服务在输出过程中返回错误。',MODEL_INVALID_RESPONSE:'模型返回格式不完整或不符合接口要求。',
+    MODEL_OUTPUT_TRUNCATED:'模型达到单次输出长度上限，不完整的工具调用未执行。可分批处理后继续。',
     MODEL_UNAVAILABLE:'模型请求失败，未能收到完整回答。'} as Record<string,string>)[code] || code
 }
 

@@ -13,6 +13,13 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class CapabilityPolicyTest {
+    @Test void toolIntentCannotSwitchRunOwnerOrSmuggleInvalidProviderJson(){
+        tool("web_read",true);
+        var attacker=new Principal(UUID.randomUUID(),UUID.randomUUID());
+        assertThat(policy.evaluate(attacker,snapshot(),intent("web_read")).reasonCode()).isEqualTo("RUN_OWNER_MISMATCH");
+        var invalid=new ToolIntent(UUID.randomUUID(),"c1","web_read","1.0.0",Map.of("_raw","{broken}"),"","","");
+        assertThat(policy.evaluate(OWNER,snapshot(),invalid).reasonCode()).isEqualTo("INVALID_ARGUMENT_JSON");
+    }
     RunSnapshot mode(com.agentops.domain.RunMode mode) {
         var s = snapshot("查询资料");
         return new RunSnapshot(s.key(),s.status(),s.phase(),s.stateVersion(),s.checkpointVersion(),s.workerEpoch(),

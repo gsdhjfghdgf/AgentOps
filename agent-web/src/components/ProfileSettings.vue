@@ -1,18 +1,27 @@
 <script setup lang="ts">
-import {nextTick,onBeforeUnmount,onMounted,ref} from 'vue'
+import {computed,nextTick,onBeforeUnmount,onMounted,ref,watch} from 'vue'
 import AppIcon from './AppIcon.vue'
-import {identity} from '../api'
+import {api} from '../api'
+import {useAccount,type LoginDevice} from '../composables/useAccount'
 const props=defineProps<{name:string;theme:'light'|'dark'}>()
-const emit=defineEmits<{close:[];save:[value:{name:string;theme:'light'|'dark';tenantId:string;userId:string}];models:[];clear:[]}>()
-const name=ref(props.name),theme=ref(props.theme),tenant=ref(identity.tenantId),user=ref(identity.userId),error=ref('')
+const emit=defineEmits<{close:[];save:[value:{name:string;theme:'light'|'dark'}];models:[];clear:[]}>()
+const {account,updateName,changePassword,logout}=useAccount()
+const name=ref(props.name),theme=ref(props.theme),error=ref(''),notice=ref(''),busy=ref(false),section=ref('profile')
+const currentPassword=ref(''),newPassword=ref(''),confirmation=ref(''),devices=ref<LoginDevice[]>([]),loadingDevices=ref(false)
+const tabs=[{id:'profile',name:'个人资料',icon:'user'},{id:'appearance',name:'偏好设置',icon:'settings'},{id:'security',name:'账号安全',icon:'check'},{id:'data',name:'数据管理',icon:'folder'}]
+const initial=computed(()=>[...(account.value?.displayName||'A')][0])
 const panel=ref<HTMLElement|null>(null),nameInput=ref<HTMLInputElement|null>(null)
 const previous=document.activeElement as HTMLElement|null
-const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-function save(){
+async function action(task:()=>Promise<void>){if(busy.value)return;busy.value=true;error.value='';notice.value='';try{await task()}catch(e){error.value=(e as Error).message}finally{busy.value=false}}
+async function save(){
  if(!name.value.trim()){error.value='请填写显示名称。';nameInput.value?.focus();return}
- if(!uuid.test(tenant.value.trim())||!uuid.test(user.value.trim())){error.value='工作空间标识必须是完整的 UUID，请检查开发者设置。';return}
- emit('save',{name:name.value.trim().slice(0,24),theme:theme.value,tenantId:tenant.value.trim().toLowerCase(),userId:user.value.trim().toLowerCase()})
+ await action(async()=>{await updateName(name.value.trim());emit('save',{name:name.value.trim(),theme:theme.value});notice.value='个人资料已保存。'})
 }
+async function loadDevices(){loadingDevices.value=true;try{devices.value=(await api.get<{sessions:LoginDevice[]}>('/api/auth/sessions')).sessions}catch(e){error.value=(e as Error).message}finally{loadingDevices.value=false}}
+function password(){if(newPassword.value!==confirmation.value){error.value='两次输入的新密码不一致。';return}void action(async()=>{await changePassword(currentPassword.value,newPassword.value);currentPassword.value='';newPassword.value='';confirmation.value=''})}
+async function revoke(device:LoginDevice){await action(async()=>{if(device.current){await logout();return}await api.del('/api/auth/sessions/'+device.id);await loadDevices();notice.value='该设备已退出登录。'})}
+function date(value?:string){return value?new Date(value).toLocaleString('zh-CN',{dateStyle:'medium',timeStyle:'short'}):'—'}
+watch(section,async value=>{error.value='';notice.value='';if(value==='security')await loadDevices()})
 function keydown(e:KeyboardEvent){if(e.key==='Escape'){e.preventDefault();emit('close')}
  if(e.key!=='Tab'||!panel.value)return
  const controls=[...panel.value.querySelectorAll<HTMLElement>('button,input,select,summary,[tabindex="0"]')].filter(el=>!el.hasAttribute('disabled')&&el.getClientRects().length&&(!el.closest('details:not([open])')||el.matches('summary')))
@@ -26,24 +35,21 @@ onBeforeUnmount(()=>{document.removeEventListener('keydown',keydown);if(previous
 <template>
  <Teleport to="body"><div class="profile-backdrop" @click.self="emit('close')">
   <section ref="panel" class="profile-dialog" role="dialog" aria-modal="true" aria-labelledby="profile-title">
-   <header><span class="profile-symbol"><AppIcon name="user" :size="24" /></span><div><h2 id="profile-title">个人设置</h2><p>管理本机资料与工作空间</p></div><button class="btn btn-ghost" aria-label="关闭个人设置" @click="emit('close')"><AppIcon name="close" /></button></header>
-   <form @submit.prevent="save">
-    <label for="profile-name">显示名称</label><input id="profile-name" ref="nameInput" v-model="name" class="field" maxlength="24" autocomplete="nickname" />
-    <p class="help">名称仅显示在本机，不会创建或切换登录账号。</p>
-    <label for="profile-theme">外观</label><select id="profile-theme" v-model="theme" class="field"><option value="light">浅色</option><option value="dark">深色</option></select>
-    <button type="button" class="profile-link" @click="emit('models')"><span><strong>聊天模型</strong><small>管理服务地址、Key 和模型名称</small></span><AppIcon name="chevron" :size="16" /></button>
-    <details class="developer-settings"><summary>开发者设置 · 工作空间标识</summary><p class="help">仅用于本地联调。修改后切换会话和项目数据视图，已有数据保留，正在运行的任务不会因此停止。</p>
-     <label for="profile-tenant">Tenant ID</label><input id="profile-tenant" v-model="tenant" class="field mono" spellcheck="false" />
-     <label for="profile-user">User ID</label><input id="profile-user" v-model="user" class="field mono" spellcheck="false" />
-    </details>
-    <p v-if="error" class="profile-error" role="alert">{{ error }}</p>
-    <footer><button class="btn btn-ghost history-manage" type="button" @click="emit('clear')">清空会话…</button><button type="button" class="btn" @click="emit('close')">取消</button><button class="btn btn-primary" type="submit">保存设置</button></footer>
-   </form>
+   <header><span class="profile-symbol">{{ initial }}</span><div><h2 id="profile-title">个人中心</h2><p>{{ account?.displayName }} · @{{ account?.username }}</p></div><button class="btn btn-ghost" aria-label="关闭个人设置" @click="emit('close')"><AppIcon name="close" /></button></header>
+   <div class="profile-layout"><nav aria-label="个人中心栏目"><button v-for="item in tabs" :key="item.id" :class="{selected:section===item.id}" :aria-current="section===item.id?'page':undefined" :disabled="busy" @click="section=item.id"><AppIcon :name="item.icon" :size="16" />{{ item.name }}</button><button class="logout" :disabled="busy" @click="action(()=>logout())">退出登录</button></nav>
+   <div class="profile-content">
+    <form v-if="section==='profile'" @submit.prevent="save"><h3>个人资料</h3><p class="help">你的称呼会在工作空间中显示。</p><label for="profile-name">显示名称</label><input id="profile-name" ref="nameInput" v-model="name" class="field" maxlength="24" autocomplete="nickname" required :disabled="busy" /><label>用户名</label><p class="readonly">{{ account?.username }}</p><label>注册时间</label><p class="readonly">{{ date(account?.createdAt) }}</p><footer><button class="btn btn-primary" type="submit" :disabled="busy">{{ busy?'正在保存…':'保存资料' }}</button></footer></form>
+    <section v-else-if="section==='appearance'"><h3>偏好设置</h3><p class="help">外观偏好保存在当前设备。</p><label for="profile-theme">外观</label><select id="profile-theme" v-model="theme" class="field"><option value="light">浅色</option><option value="dark">深色</option></select><button class="btn btn-primary preference-save" @click="emit('save',{name:account?.displayName||name,theme});notice='偏好设置已保存。'">保存偏好</button><button type="button" class="profile-link" @click="emit('models')"><span><strong>聊天模型</strong><small>选择或管理多个模型服务</small></span><AppIcon name="chevron" :size="16" /></button><p class="help">快捷键：Ctrl / ⌘ + K 搜索会话，Ctrl / ⌘ + Shift + O 开始新对话。</p></section>
+    <section v-else-if="section==='security'"><h3>账号安全</h3><form @submit.prevent="password"><p class="help">修改密码后，所有设备都会退出登录。后台任务会保留。</p><label for="current-password">当前密码</label><input id="current-password" v-model="currentPassword" class="field" type="password" autocomplete="current-password" required maxlength="128" :disabled="busy" /><label for="new-password">新密码</label><input id="new-password" v-model="newPassword" class="field" type="password" autocomplete="new-password" required minlength="10" maxlength="128" :disabled="busy" /><label for="confirm-new-password">确认新密码</label><input id="confirm-new-password" v-model="confirmation" class="field" type="password" autocomplete="new-password" required minlength="10" maxlength="128" :disabled="busy" /><button class="btn preference-save" type="submit" :disabled="busy">修改密码</button></form><div class="devices-title"><h3>已登录设备</h3><button class="btn btn-ghost btn-sm" :disabled="loadingDevices||busy" @click="loadDevices">刷新</button></div><p v-if="loadingDevices" class="help" role="status">正在读取…</p><article v-for="device in devices" :key="device.id" class="device"><div><strong>{{ device.current?'当前设备':'其他设备' }}</strong><span :title="device.device">{{ device.device }}</span><small>最近活动 {{ date(device.lastUsedAt) }}</small></div><button class="btn btn-sm" :disabled="busy" @click="revoke(device)">退出</button></article><button v-if="devices.length>1" class="btn btn-sm preference-save" :disabled="busy" @click="action(()=>logout(true))">退出所有设备</button></section>
+    <section v-else><h3>数据管理</h3><p class="help">会话、项目与文件归属于当前账号，切换账号不会删除资料。</p><div class="data-row"><strong>导出会话</strong><p>打开会话，使用顶部“导出对话”，保存 Markdown 文件。</p></div><div class="data-row danger-zone"><strong>清空会话记录</strong><p>删除当前账号的会话记录。执行中的任务需要先停止，操作前会再次确认。</p><button class="btn btn-danger" :disabled="busy" @click="emit('clear')">清空会话…</button></div></section>
+    <p v-if="error" class="profile-error" role="alert">{{ error }}</p><p v-if="notice" class="profile-success" role="status">{{ notice }}</p>
+   </div></div>
   </section>
  </div></Teleport>
 </template>
 <style scoped>
 .profile-backdrop{position:fixed;inset:0;z-index:1100;background:#17251d50;backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:24px}
-.profile-dialog{width:min(520px,100%);max-height:calc(100dvh - 48px);overflow:auto;background:var(--ink-0,#fff);color:var(--txt-1);border:1px solid var(--line);border-radius:22px;box-shadow:0 24px 90px #13261b26;padding:30px}
-header{display:flex;align-items:center;gap:14px;margin-bottom:28px}header>.btn{margin-left:auto}.profile-symbol{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:var(--green-soft);color:var(--green)}h2{margin:0;font-size:21px}header p{margin:6px 0 0;font-size:12px;color:var(--txt-3)}label{display:block;font-size:12px;margin:20px 0 9px}.field{width:100%}.help{font-size:11px;line-height:1.8;color:var(--txt-3);margin:9px 0}.profile-link{display:flex;align-items:center;justify-content:space-between;width:100%;background:transparent;color:inherit;border:1px solid var(--line);border-radius:12px;padding:16px;margin:24px 0;cursor:pointer;text-align:left}.profile-link strong{display:block;font-size:13px;font-weight:500}.profile-link small{display:block;font-size:11px;color:var(--txt-3);margin-top:6px}.profile-link:hover{background:var(--ink-1)}.developer-settings{border-top:1px solid var(--line);padding-top:18px;font-size:11px;color:var(--txt-3)}summary{cursor:pointer}.profile-error{background:#fceeee;color:#b53333;padding:12px;border-radius:8px;font-size:12px}footer{display:flex;gap:9px;border-top:1px solid var(--line);margin-top:25px;padding-top:20px;align-items:center}.history-manage{margin-right:auto;font-size:11px;color:var(--txt-3)}
+.profile-dialog{width:min(820px,100%);max-height:calc(100dvh - 48px);overflow:auto;background:var(--ink-0,#fff);color:var(--txt-1);border:1px solid var(--line);border-radius:22px;box-shadow:0 24px 90px #13261b26;padding:30px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:28px}header>.btn{margin-left:auto}.profile-symbol{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:var(--green-soft);color:var(--green)}h2{margin:0;font-size:21px}header p{margin:6px 0 0;font-size:12px;color:var(--txt-3)}label{display:block;font-size:12px;margin:20px 0 9px}.field{width:100%}.help{font-size:11px;line-height:1.8;color:var(--txt-3);margin:9px 0}.profile-link{display:flex;align-items:center;justify-content:space-between;width:100%;background:transparent;color:inherit;border:1px solid var(--line);border-radius:12px;padding:16px;margin:24px 0;cursor:pointer;text-align:left}.profile-link strong{display:block;font-size:13px;font-weight:500}.profile-link small{display:block;font-size:11px;color:var(--txt-3);margin-top:6px}.profile-link:hover{background:var(--ink-1)}.profile-error{background:#fceeee;color:#b53333;padding:12px;border-radius:8px;font-size:12px}footer{display:flex;gap:9px;border-top:1px solid var(--line);margin-top:25px;padding-top:20px;align-items:center}
+.profile-layout{display:grid;grid-template-columns:150px minmax(0,1fr);gap:30px;min-height:400px}.profile-layout nav{border-right:1px solid var(--line);padding-right:16px;display:flex;flex-direction:column;gap:7px}.profile-layout nav button{display:flex;gap:9px;align-items:center;padding:12px;border:0;border-radius:9px;background:transparent;color:var(--txt-2);font-size:12px;text-align:left;cursor:pointer}.profile-layout nav button.selected{background:var(--green-soft);color:var(--green);font-weight:600}.profile-layout nav .logout{margin-top:auto;color:#a13f3f}.profile-content{min-width:0}.profile-content h3{font-size:15px;margin:3px 0 12px}.readonly{font-size:12px;color:var(--txt-2);margin:0}.profile-symbol{font-size:23px;font-weight:600}.preference-save{margin-top:16px}.profile-success{font-size:12px;color:var(--green);padding:12px;background:var(--green-soft);border-radius:9px}.devices-title{display:flex;align-items:center;justify-content:space-between;margin-top:32px}.devices-title h3{margin:0}.device{display:flex;gap:14px;align-items:center;border-bottom:1px solid var(--line);padding:14px 0}.device>div{min-width:0;flex:1}.device strong{font-size:12px;font-weight:500}.device span,.device small{display:block;font-size:10px;color:var(--txt-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:370px;margin-top:5px}.data-row{border-top:1px solid var(--line);margin-top:22px;padding-top:20px}.data-row strong{font-size:13px}.data-row p{font-size:12px;line-height:1.8;color:var(--txt-3)}.danger-zone{margin-top:32px}@media(max-width:650px){.profile-layout{grid-template-columns:1fr;gap:20px}.profile-layout nav{flex-direction:row;flex-wrap:wrap;border-right:0;border-bottom:1px solid var(--line);padding:0 0 12px}.profile-layout nav .logout{margin-top:0}.profile-dialog{padding:20px}}
 </style>

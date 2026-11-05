@@ -13,8 +13,7 @@ import java.util.UUID;
 
 /**
  * 会话 / 消息 / 任务 / 命令 REST 接口（文档 21.1）。
- * 首版演示用 X-Tenant-Id / X-User-Id 请求头传递已验证主体；
- * 生产环境必须替换为网关注入的已验证身份（Principal 只能由服务端构造，文档 15.1）。
+ * AuthFilter 校验登录凭据并覆盖 X-Tenant-Id / X-User-Id；这些身份由服务端构造。
  */
 @RestController
 @RequestMapping("/api")
@@ -26,7 +25,7 @@ public class ApiController {
         this.app = app;
     }
 
-    /** 演示主体：由网关（或本控制器的请求头）提供；生产环境不可信请求头。 */
+    /** 请求头已由 AuthFilter 替换为登录账号身份，客户端同名请求头不会作为授权依据。 */
     public static Principal principal(String tenantId, String userId) {
         try {
             return Principal.of(UUID.fromString(tenantId), UUID.fromString(userId));
@@ -152,16 +151,6 @@ public class ApiController {
                 : ResponseEntity.status(HttpStatus.CREATED).body(body);
     }
 
-    @GetMapping("/sessions/{sessionId}/runs/{runId}")
-    public Map<String, Object> getRun(
-            @RequestHeader("X-Tenant-Id") String tenantId,
-            @RequestHeader("X-User-Id") String userId,
-            @PathVariable UUID sessionId, @PathVariable UUID runId) {
-        var owner = principal(tenantId, userId);
-        var v = app.getRunInSession(owner, sessionId, runId);
-        return toRunMap(owner,v);
-    }
-
     @GetMapping("/sessions/{sessionId}/runs")
     public Map<String, Object> listRuns(
             @RequestHeader("X-Tenant-Id") String tenantId,
@@ -204,15 +193,6 @@ public class ApiController {
         return app.supplement(owner, sessionId, runId, req);
     }
 
-    @GetMapping("/runs/{runId}/progress")
-    public Map<String, Object> progress(
-            @RequestHeader("X-Tenant-Id") String tenantId,
-            @RequestHeader("X-User-Id") String userId,
-            @PathVariable UUID runId) {
-        var owner = principal(tenantId, userId);
-        return app.progress(owner, runId);
-    }
-
     @PostMapping("/runs/{runId}/cancel")
     public Map<String, Object> cancel(
             @RequestHeader("X-Tenant-Id") String tenantId,
@@ -220,32 +200,6 @@ public class ApiController {
             @PathVariable UUID runId) {
         var owner = principal(tenantId, userId);
         return app.requestCancel(owner, runId);
-    }
-
-    // ==================== 异常映射 ====================
-
-    @ExceptionHandler(RunApplicationService.NotFoundException.class)
-    public ResponseEntity<Map<String, Object>> notFound(RuntimeException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(Map.of("error", "NOT_FOUND", "message", e.getMessage()));
-    }
-
-    @ExceptionHandler(RunApplicationService.BadRequestException.class)
-    public ResponseEntity<Map<String, Object>> badRequest(RuntimeException e) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(Map.of("error", "BAD_REQUEST", "message", e.getMessage()));
-    }
-
-    @ExceptionHandler(RunApplicationService.ConflictException.class)
-    public ResponseEntity<Map<String, Object>> conflict(RuntimeException e) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(Map.of("error", "CONFLICT", "message", e.getMessage()));
-    }
-
-    @ExceptionHandler(ApiException.class)
-    public ResponseEntity<Map<String, Object>> apiError(ApiException e) {
-        return ResponseEntity.status(e.status())
-                .body(Map.of("error", e.status().getReasonPhrase(), "message", e.getMessage()));
     }
 
     public static class ApiException extends RuntimeException {

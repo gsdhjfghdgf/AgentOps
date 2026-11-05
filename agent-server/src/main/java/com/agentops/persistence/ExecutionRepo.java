@@ -167,6 +167,16 @@ public class ExecutionRepo {
                 """, tenantId, runId, attemptId);
     }
 
+    /** Claim a known failed model result once, before settling its reported usage. */
+    public boolean finishKnownModelFailure(UUID tenantId, UUID runId, UUID attemptId, String errorCode, long usedTokens) {
+        return jdbc.update("""
+                UPDATE operation_attempts
+                SET state='failed',error_code=?,outcome_unknown=false,used_tokens=?,usage_known=true,finished_at=now()
+                WHERE tenant_id=? AND run_id=? AND attempt_id=? AND kind='model'
+                  AND state IN ('reserved','running')
+                """,errorCode,usedTokens,tenantId,runId,attemptId)>0;
+    }
+
     public void finishAttempt(UUID tenantId, UUID runId, UUID attemptId, String state,
                               String providerRef, String errorCode, boolean outcomeUnknown,
                               long usedTokens, boolean usageKnown) {

@@ -226,7 +226,7 @@ public class RunCoordinator {
             if(current.isEmpty() || RunRepo.PAUSE_REQUESTED.equals(current.get().waitingReason()))return Optional.empty();
             UUID attemptId = UUID.randomUUID();
             var attempts = attempts(owner, snapshot.key().runId());
-            long reserve = 4000L; // 输入估算 + 输出上界（简化估算，可按上下文长度细化）
+            long reserve = budget.modelReservationTokens();
             if (!budget.reserve(owner, snapshot.key().sessionId(), snapshot.key().runId(), attemptId, attempts, reserve, 0,StepKind.MODEL)) {
                 return Optional.empty();
             }
@@ -334,13 +334,18 @@ public class RunCoordinator {
             runs.addTokenUsed(owner.tenantId(),runId,used);
         });
     }
-    /** 模型调用失败（T4 变体）：unknown 时保守结算，否则释放预留。 */
+    /** 模型调用失败：已知用量准确结算；未知结果保守结算；明确无用量才释放。 */
     public boolean recordModelFailure(Lease lease, RunSnapshot snapshot, UUID attemptId,
                                       String errorCode, boolean outcomeUnknown, Usage usage) {
         return Boolean.TRUE.equals(tx.execute(s -> {
             var owner = snapshot.key().owner();
             var reserved = budget.reservedTokens(owner.tenantId(), attemptId);
-            if (outcomeUnknown) {
+            if (usage != null && usage.finalUsageKnown()) {
+                if (!execution.finishKnownModelFailure(owner.tenantId(),snapshot.key().runId(),attemptId,errorCode,usage.totalTokens()))
+                    return true;
+                budget.settle(owner,snapshot.key().runId(),attemptId,reserved,usage.totalTokens(),true);
+                runs.addTokenUsed(owner.tenantId(),snapshot.key().runId(),usage.totalTokens());
+            } else if (outcomeUnknown) {
                 budget.settle(owner, snapshot.key().runId(), attemptId, reserved, reserved, false);
                 execution.finishAttempt(owner.tenantId(), snapshot.key().runId(), attemptId,
                         "unknown", null, errorCode, true, 0, false);

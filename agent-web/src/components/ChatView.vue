@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import {renderMarkdown} from '../services/markdown'
 import { useChatRun, modelFailureText } from '../composables/useChatRun'
 import AppIcon from './AppIcon.vue'
 import ComposerModelPicker from './ComposerModelPicker.vue'
 import ComposerModePicker from './ComposerModePicker.vue'
 import type { RunMode } from '../api'
+import {downloadConversation} from '../api'
 import QuestionCard from './QuestionCard.vue'
 import TaskTimeline from './TaskTimeline.vue'
 import ProjectPicker from './ProjectPicker.vue'
@@ -14,10 +14,13 @@ import ArtifactImage from './ArtifactImage.vue'
 import RunWorkspacePanel from './RunWorkspacePanel.vue'
 import RunProgress from './RunProgress.vue'
 import ArtifactPreview from './ArtifactPreview.vue'
+import {fileToolLabels,latestPresentations} from '../fileTools'
 import { groupTaskMessages } from '../composables/chatTurns'
 
 const props = defineProps<{ sessionId: string; projectId?:string; projectName?:string }>()
 const previewArtifact=ref<{id:string;name:string}|null>(null)
+const exporting=ref(false),exportError=ref('')
+async function exportConversation(){if(exporting.value)return;exporting.value=true;exportError.value='';try{await downloadConversation(props.sessionId)}catch(e){exportError.value=(e as Error).message}finally{exporting.value=false}}
 const emit = defineEmits<{ (e: 'sessions-changed'): void; (e: 'start-task', text: string, mode?: RunMode, submit?: boolean): void; (e: 'configure-model'): void }>()
 const {
   messages, draft, loading, sending, error, runId, runStatus, phase, tokenUsed, questionId,
@@ -25,8 +28,10 @@ const {
   onPause, onResume,
   questionText, questionOptions, eventLog, approvals, artifacts, runtime, active, sessionBusy, reasonCode,
   streamText, commentaryText,streamNotice, messagePanel, hasMore, loadingOlder, runHistory, selectRun, loadOlder,
-  send, onCancel, onContinue, onDecision, onSupplementText, onSteer, canSteer, commandNotice, download, onKeydown,
+  send, onCancel, onContinue, onDecision, onSupplementText, canSteer, commandNotice, download, onKeydown,
 } = useChatRun(props, () => emit('sessions-changed'))
+const presentations=computed(()=>latestPresentations(artifacts.value))
+const otherArtifacts=computed(()=>artifacts.value.filter(a=>!a.name.toLowerCase().endsWith('.pptx')&&!(presentations.value.length&&a.name.toLowerCase().endsWith('.png'))))
 watch(() => approvals.value.map(item => item.approvalId).join(','), async (ids, previous) => {
   if (!ids || ids === previous) return
   await nextTick()
@@ -37,12 +42,10 @@ const monitorOpen=ref(false)
 const failureExplanation=computed(()=>({BUDGET_EXCEEDED:'当前执行额度已用完，进度已保存。点击“延长并继续”可从当前步骤接着执行，无需新建任务。',
   APPROVAL_CHECK_FAILED:'旧版工具准备流程失败。修复后可在当前会话重新发送任务。',approval_rejected:'你已拒绝本次操作，工具没有获准执行。'} as Record<string,string>)[reasonCode.value] || modelFailureText(reasonCode.value))
 
-marked.setOptions({ breaks: true })
 const PHASES = [
   { k: 'prepare', label: '准备' }, { k: 'model', label: '模型' },
   { k: 'tools', label: '工具' }, { k: 'validate', label: '校验' }, { k: 'finalize', label: '收尾' },
 ]
-const phaseIndex = computed(() => PHASES.findIndex(p => p.k === phase.value))
 function statusBadge(s: string): string {
   if (s === 'succeeded') return 'ok'
   if (['failed', 'timed_out', 'budget_exceeded', 'cancelled'].includes(s)) return 'bad'
@@ -60,7 +63,7 @@ function label(s: string): string {
 }
 const statusLabel = computed(() => label(runStatus.value))
 function renderMd(text: string): string {
-  return DOMPurify.sanitize(marked.parse(text, { async: false }) as string)
+  return renderMarkdown(text)
 }
 const taskTurns = computed(() => groupTaskMessages(messages.value))
 const modeLabels = { chat: 'Chat', plan: 'Plan', build: 'Build' }
@@ -101,6 +104,7 @@ function eventTime(value: string): string {
   return value ? new Date(value).toLocaleTimeString('zh-CN', { hour12: false }) : ''
 }
 function toolLabel(name: string): string {
+  if(fileToolLabels[name])return fileToolLabels[name]
   return ({ sales_query: '查询销售数据', report_generate: '生成报告', knowledge_search: '检索知识库', send_email: '发送通知',
     calculator:'计算算式',current_time:'查询时间',csv_analyze:'统计 CSV',knowledge_list:'列出知识文档',knowledge_read:'阅读知识文档',
     text_file_create:'生成文件',workspace_list:'查看工作区',workspace_read:'读取文件',workspace_search:'搜索文件',workspace_write:'写入文件',
@@ -144,7 +148,8 @@ defineExpose({ fillDraft: (text: string, selectedMode: RunMode = mode.value, sub
     <ArtifactPreview v-if="previewArtifact" :key="previewArtifact.id" :id="previewArtifact.id" :name="previewArtifact.name" @close="previewArtifact=null" />
     <!-- ============ 左：消息流 ============ -->
     <section class="stream" aria-label="对话消息">
-      <div class="conversation-context"><AppIcon :name="projectName ? 'folder' : 'chat'" :size="15" /><span>{{ projectName || '普通会话' }}</span><small v-if="projectName">项目内文件可直接读写</small></div>
+      <div class="conversation-context"><AppIcon :name="projectName ? 'folder' : 'chat'" :size="15" /><span>{{ projectName || '普通会话' }}</span><small v-if="projectName">项目内文件可直接读写</small><button class="btn btn-ghost btn-sm conversation-export" :disabled="exporting||loading" @click="exportConversation">{{ exporting?'正在导出…':'导出对话' }}</button></div>
+      <p v-if="exportError" class="err small" role="alert">{{ exportError }}</p>
       <label v-if="runHistory.length>1" class="run-picker small dim">
         查看任务
         <select class="field" :value="runId" :disabled="sending" @change="selectRun(($event.target as HTMLSelectElement).value)">
@@ -250,8 +255,16 @@ defineExpose({ fillDraft: (text: string, selectedMode: RunMode = mode.value, sub
           <QuestionCard v-if="questionId" :question-id="questionId" :question="questionText" :options="questionOptions" :busy="sending" @answer="onSupplementText" />
 
           <!-- 产物 -->
+          <section v-if="presentations.length" class="ppt-deliverables" aria-label="生成的 PPT 文件">
+            <article v-for="a in presentations" :key="a.id" class="ppt-file" :data-artifact-id="a.id">
+              <span class="ppt-format" aria-hidden="true">PPTX</span>
+              <div class="ppt-description"><strong>{{ a.name }}</strong><small>{{ runStatus==='succeeded'?'已生成 · 可编辑的 PowerPoint 文件':'当前生成版本' }} · 支持逐页预览</small></div>
+              <div class="ppt-actions"><button class="btn btn-sm" @click="previewArtifact=a">查看 PPT</button><button class="btn btn-primary btn-sm" @click="download(a.id)">下载 .pptx</button></div>
+            </article>
+            <p class="small muted">只交付最新完整 PPT。中间版本与预览素材可在“文件与成果”查看。</p>
+          </section>
           <div v-if="artifacts.length" class="ifacts">
-            <div v-for="a in artifacts" :key="a.id" class="ifact">
+            <div v-for="a in otherArtifacts" :key="a.id" class="ifact">
               <span aria-hidden="true">📄</span>
               <span class="small">{{ a.name }}</span>
               <button class="btn btn-sm" @click="previewArtifact=a">预览</button><button class="btn btn-sm" @click="download(a.id)">下载</button><ArtifactImage v-if="a.name.toLowerCase().endsWith('.png')" :id="a.id" :name="a.name" />
@@ -314,6 +327,7 @@ defineExpose({ fillDraft: (text: string, selectedMode: RunMode = mode.value, sub
 </template>
 
 <style scoped>
+.conversation-export{margin-left:auto;font-size:11px}
 .live-commentary{border-left:1px solid var(--line);padding-left:20px}.live-commentary .msg-body{color:var(--txt-2);font-size:13px}.stream-dot{width:6px;height:6px;border-radius:50%;background:var(--green);margin-left:8px;animation:stream-pulse 1.2s ease-in-out infinite}.stream-notice{padding:10px 0;line-height:1.8}@keyframes stream-pulse{50%{opacity:.3}}@media(prefers-reduced-motion:reduce){.stream-dot{animation:none}}
 .task-step + .task-step { margin-top: 12px; }
 .task-supplement { display:flex; gap:12px; align-items:baseline; padding:11px 14px; border-left:2px solid var(--green); border-radius:0 8px 8px 0; background:var(--ink-2); font-size:12px; }
@@ -396,6 +410,7 @@ defineExpose({ fillDraft: (text: string, selectedMode: RunMode = mode.value, sub
 .apv-title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; }
 .apv-actions { display:flex; gap:8px; margin-top:12px; }
 .ifacts { margin-top:15px; display:grid; gap:8px; }
+.ppt-deliverables{display:grid;gap:10px;margin-top:18px}.ppt-file{display:flex;align-items:center;gap:14px;padding:18px;border:1px solid var(--green-line);border-radius:12px;background:var(--ink-2);flex-wrap:wrap}.ppt-format{display:grid;place-items:center;width:48px;height:56px;border-radius:8px;background:var(--amber-soft);color:var(--amber);font-size:11px;font-weight:700;letter-spacing:1px}.ppt-description{flex:1;min-width:140px;overflow-wrap:anywhere}.ppt-description strong{font-size:14px}.ppt-description small{display:block;margin-top:5px;color:var(--txt-3);font-size:11px}.ppt-actions{display:flex;gap:8px}
 .approval-diff {max-height:320px;overflow:auto;white-space:pre-wrap;font:11px/1.8 var(--font-mono);padding:14px;background:var(--ink-1);border-radius:8px;}
 .ifact { flex-wrap:wrap; display:flex; align-items:center; gap:9px; padding:12px; border:1px solid var(--line); background:var(--ink-2); border-radius:9px; }
 .ifact .btn { margin-left:auto; }

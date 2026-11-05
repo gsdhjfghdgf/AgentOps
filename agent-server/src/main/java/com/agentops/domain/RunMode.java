@@ -15,7 +15,9 @@ public enum RunMode {
             "knowledge_search", "knowledge_list", "knowledge_read", "memory_list", "sales_query",
             "calculator", "current_time", "csv_analyze", "web_search", "web_read",
             "browser_open", "browser_snapshot", "browser_close",
-            "skill_use", "skill_list", "skill_dependencies", "skill_preview", "mcp_connections", "mcp_tools");
+            "skill_use", "skill_list", "skill_dependencies", "skill_preview", "mcp_connections", "mcp_tools",
+            "artifact_list", "artifact_info", "artifact_import", "presentation_templates", "presentation_inspect",
+            "document_read", "document_search", "spreadsheet_read", "spreadsheet_analyze", "image_info", "image_search", "archive_list");
     private static final Pattern GREETING = Pattern.compile(
             "(?i)^(你好|您好|嗨|hi|hello|早上好|下午好|晚上好|谢谢|感谢|你是谁)[！!。？?\\s]*$");
 

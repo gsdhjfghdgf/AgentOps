@@ -18,7 +18,7 @@ public class ExportService {
     private final ArtifactService artifacts;private final OperationsService operations;private final Json json;
     public ExportService(ArtifactService artifacts,OperationsService operations,Json json){this.artifacts=artifacts;this.operations=operations;this.json=json;}
     public ArtifactRef export(Principal p,UUID run,String format,String title,String content)throws Exception{
-        var task=operations.owned(p,run);if(!Set.of("docx","pdf","xlsx","md","html").contains(format)||title==null||title.isBlank()||title.length()>100||content==null||content.isBlank()||content.length()>100000)throw new IllegalArgumentException("格式、标题或正文无效");
+        var task=operations.owned(p,run);if(format==null||!Set.of("docx","pdf","xlsx","md","html").contains(format)||title==null||title.isBlank()||title.length()>100||content==null||content.isBlank()||content.length()>100000)throw new IllegalArgumentException("格式、标题或正文无效");
         Path file=artifacts.stagingPath(p.tenantId(),UUID.randomUUID(),format);String name=title.replaceAll("[\\\\/:*?\"<>|\\r\\n]","_")+"."+format;
         try{
             switch(format){
@@ -48,7 +48,15 @@ public class ExportService {
         }
     }
     public Map<String,Object> preview(Principal p,UUID id)throws Exception{
-        var item=artifacts.resolveForDownload(p,id).orElseThrow(()->new com.agentops.api.RunApplicationService.NotFoundException("产物不存在"));if(item.byteSize()>5_000_000)throw new IllegalArgumentException("预览限5MB，较大文件请下载");String name=item.originalName().toLowerCase(Locale.ROOT);
+        var item=artifacts.resolveForDownload(p,id).orElseThrow(()->new com.agentops.api.RunApplicationService.NotFoundException("产物不存在"));String name=item.originalName().toLowerCase(Locale.ROOT);
+        if(name.endsWith(".pptx")){
+            if(item.byteSize()>com.agentops.filetools.FileToolSupport.MAX_BYTES)throw new IllegalArgumentException("PPT预览限20MB，较大文件请下载");
+            try(var deck=new org.apache.poi.xslf.usermodel.XMLSlideShow(com.agentops.filetools.FileToolSupport.office(item.file()))){
+                if(deck.getSlides().isEmpty()||deck.getSlides().size()>100)throw new IllegalArgumentException("PPT预览支持1～100页");
+                return Map.of("type","presentation","slideCount",deck.getSlides().size(),"notice","使用POI渲染，与Office显示可能略有差异。");
+            }
+        }
+        if(item.byteSize()>5_000_000)throw new IllegalArgumentException("预览限5MB，较大文件请下载");
         if(name.endsWith(".xlsx")){try(var in=Files.newInputStream(item.file());var book=new XSSFWorkbook(in)){var rows=new ArrayList<List<String>>();var sheet=book.getSheetAt(0);var format=new org.apache.poi.ss.usermodel.DataFormatter();for(var row:sheet){var cells=new ArrayList<String>();for(int c=0;c<Math.min(30,row.getLastCellNum());c++)cells.add(format.formatCellValue(row.getCell(c)));rows.add(cells);if(rows.size()>=100)break;}return Map.of("type","table","rows",rows,"limited",true);}}
         if(name.endsWith(".docx")){try(var in=Files.newInputStream(item.file());var doc=new XWPFDocument(in)){return Map.of("type","text","content",String.join("\n",doc.getParagraphs().stream().limit(1000).map(XWPFParagraph::getText).toList()));}}
         if(name.matches(".*\\.(md|txt|csv|html|json)$")){String content=Files.readString(item.file());return Map.of("type",name.endsWith(".html")?"html":"text","content",content.substring(0,Math.min(100000,content.length())));}

@@ -17,4 +17,7 @@ contextBridge.exposeInMainWorld('desktopEnv', {
   setWindowTheme: (theme) => ipcRenderer.send('agentops:theme', theme),
   selectDirectory: () => ipcRenderer.invoke('agentops:select-project'),
   notify: (title,body) => ipcRenderer.send('agentops:notify',title,body),
+  readLoginToken: () => ipcRenderer.invoke('agentops:read-login-token'),
+  readRegistrationKey: () => ipcRenderer.invoke('agentops:read-registration-key'),
+  saveLoginToken: (token) => ipcRenderer.invoke('agentops:save-login-token',token),
 })

@@ -11,18 +11,30 @@ import java.util.regex.Pattern;
 public final class ModelToolCatalog {
     private static final Set<String> BASE = Set.of("calculator", "current_time", "web_search", "web_read",
             "knowledge_search", "tool_discover", "conversation_history");
-    private static final Map<String, Pattern> HINTS = Map.of(
-            "project", Pattern.compile("(?i)项目|代码|文件|目录|编程|修改|创建|开发|project|code|file|git|build"),
-            "web", Pattern.compile("(?i)网页|联网|搜索|新闻|近期|最新|浏览器|网站|https?://|search|browser|website"),
-            "skills", Pattern.compile("(?i)技能|依赖|skills?|node|python"),
-            "knowledge", Pattern.compile("(?i)知识库|记忆|偏好|knowledge|memory"),
-            "mcp", Pattern.compile("(?i)mcp|github|issue|pull request"),
-            "reports", Pattern.compile("(?i)报告|销售|周报|表格|导出|csv|pdf|excel|word|report|sales"),
-            "messaging", Pattern.compile("(?i)邮件|通知|发信|email|send_email"));
+    private static final Map<String, Pattern> HINTS = Map.ofEntries(
+            Map.entry("project", Pattern.compile("(?i)项目|代码|目录|编程|修改|创建|开发|project|code|git|build")),
+            Map.entry("web", Pattern.compile("(?i)网页|联网|搜索|新闻|近期|最新|浏览器|网站|https?://|search|browser|website")),
+            Map.entry("skills", Pattern.compile("(?i)技能|依赖|skills?|node|python")),
+            Map.entry("knowledge", Pattern.compile("(?i)知识库|记忆|偏好|knowledge|memory")),
+            Map.entry("mcp", Pattern.compile("(?i)mcp|github|issue|pull request")),
+            Map.entry("reports", Pattern.compile("(?i)报告|销售|周报|导出|word|report|sales")),
+            Map.entry("messaging", Pattern.compile("(?i)邮件|通知|发信|email|send_email")),
+            Map.entry("presentations", Pattern.compile("(?i)ppt|powerpoint|幻灯|演示文稿|演讲")),
+            Map.entry("spreadsheets", Pattern.compile("(?i)表格|excel|xlsx|csv|统计|图表|chart|spreadsheet")),
+            Map.entry("documents", Pattern.compile("(?i)文档|pdf|word|docx|阅读文件|合并|提取")),
+            Map.entry("media", Pattern.compile("(?i)图片|图像|png|jpeg|尺寸|缩放|image")),
+            Map.entry("archives", Pattern.compile("(?i)zip|压缩|归档|打包")),
+            Map.entry("files", Pattern.compile("(?i)文件|文档|ppt|pdf|excel|word|xlsx|docx|png|图片|图表|zip|file|artifact")));
 
     private ModelToolCatalog() {}
 
     public static String group(String name) {
+        if (name.startsWith("presentation_")) return "presentations";
+        if (name.startsWith("spreadsheet_") || name.equals("data_chart")) return "spreadsheets";
+        if (name.startsWith("document_") || name.startsWith("pdf_")) return "documents";
+        if (name.startsWith("image_")) return "media";
+        if (name.startsWith("archive_")) return "archives";
+        if (name.startsWith("artifact_")) return "files";
         if (name.startsWith("project_") || name.startsWith("workspace_")
                 || Set.of("command_run","sandbox_run","plan_update","task_notes").contains(name)) return "project";
         if (name.startsWith("web_") || name.startsWith("browser_")) return "web";
@@ -49,6 +61,7 @@ public final class ModelToolCatalog {
         var groups = new HashSet<String>();
         HINTS.forEach((name, pattern) -> { if (pattern.matcher(requestedScope).find()) groups.add(name); });
         var names = new HashSet<>(BASE);
+        if(groups.contains("presentations"))names.addAll(Set.of("image_search","image_download","image_info"));
         if (run == null || run.mode() != RunMode.CHAT) {
             names.addAll(Set.of("plan_update","task_notes","skill_use"));
             if (groups.isEmpty()) groups.add("project");

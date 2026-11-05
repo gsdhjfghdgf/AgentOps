@@ -14,9 +14,20 @@ public record AgentProperties(Model model, Budget budget, Lease lease, Scheduler
     public record Model(String provider, String baseUrl, String apiKey, String chatModel,
                         String embeddingModel, int embeddingDimensions,
                         int timeoutSeconds, int maxRetries, String apiUrl,
-                        String embeddingProvider, String embeddingBaseUrl, String embeddingApiKey) {
+                        String embeddingProvider, String embeddingBaseUrl, String embeddingApiKey,
+                        StreamTimeouts streamTimeouts) {
         @org.springframework.boot.context.properties.bind.ConstructorBinding
-        public Model {}
+        public Model {
+            if (timeoutSeconds <= 0) throw new IllegalArgumentException("模型请求超时须大于0");
+            if (streamTimeouts == null) streamTimeouts = new StreamTimeouts(120, 90, 600);
+        }
+
+        public Model(String provider, String baseUrl, String apiKey, String chatModel,
+                     String embeddingModel, int embeddingDimensions, int timeoutSeconds, int maxRetries,
+                     String apiUrl, String embeddingProvider, String embeddingBaseUrl, String embeddingApiKey) {
+            this(provider, baseUrl, apiKey, chatModel, embeddingModel, embeddingDimensions,
+                    timeoutSeconds, maxRetries, apiUrl, embeddingProvider, embeddingBaseUrl, embeddingApiKey, null);
+        }
 
         public Model(String provider, String baseUrl, String apiKey, String chatModel,
                      String embeddingModel, int embeddingDimensions, int timeoutSeconds, int maxRetries) {
@@ -40,6 +51,14 @@ public record AgentProperties(Model model, Budget budget, Lease lease, Scheduler
         }
         public boolean isMock() {
             return provider == null || provider.isBlank() || "mock".equalsIgnoreCase(provider);
+        }
+    }
+
+    /** Streaming waits are independent of the ordinary JSON request timeout. */
+    public record StreamTimeouts(int firstByteSeconds, int idleSeconds, int maxDurationSeconds) {
+        public StreamTimeouts {
+            if (firstByteSeconds <= 0 || idleSeconds <= 0 || maxDurationSeconds <= 0)
+                throw new IllegalArgumentException("流式首包、空闲及总时限须大于0");
         }
     }
 

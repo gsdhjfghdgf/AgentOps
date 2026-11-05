@@ -1,4 +1,14 @@
 server:
+  address: ${AGENT_BIND_ADDRESS:127.0.0.1}
+  max-http-request-header-size: 8KB
+  tomcat:
+    connection-timeout: 10s
+    keep-alive-timeout: 30s
+    max-connections: 200
+    accept-count: 50
+    threads:
+      max: 80
+      min-spare: 8
   port: 8080
   shutdown: graceful
 
@@ -52,6 +62,10 @@ management:
 
 # ================= Agent 运行配置 =================
 agent:
+  accounts:
+    registration-key-file: ${AGENT_REGISTRATION_KEY_FILE:${user.home}/.agentops/registration.key}
+  public-web:
+    proxy-url: ${PUBLIC_WEB_PROXY_URL:${HTTPS_PROXY:${HTTP_PROXY:}}}
   # 模型接入：mock（无 key 可跑通全流程）| openai（OpenAI 兼容 /v1/chat/completions）
   model:
     provider: openai
@@ -63,13 +77,19 @@ agent:
     embedding-model: ${OLLAMA_EMBEDDING_MODEL:bge-m3:latest}
     embedding-dimensions: 1024
     timeout-seconds: 60
+    # 普通JSON请求仍为60秒；流式响应按实际收到的字节刷新空闲计时。
+    stream-timeouts:
+      first-byte-seconds: 120
+      idle-seconds: 90
+      max-duration-seconds: 600
     max-retries: 2
   # 任务预算（文档 17.1 初始配额）
   budget:
     max-model-attempts: 128
     max-tool-attempts: 512
     max-total-tokens: 1000000
-    max-output-tokens-per-call: 2000
+    # 推理与工具参数共享输出额度；这是上限，不代表每次都会消耗此数量。
+    max-output-tokens-per-call: 8192
     max-cost-micros: 1000000
     currency: CNY
     run-wall-timeout-minutes: 120

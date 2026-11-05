@@ -54,7 +54,7 @@ public class ApprovalController {
         boolean browser=com.agentops.persistence.RunRepo.isBrowserInteraction(row.toolName());
         result.put("scope",network?"task_network":command?"task_command":browser?"task_browser":"sandbox_run".equals(row.toolName())?"task_sandbox":"operation");
         var tool=tools.spec(row.toolName());
-        result.put("description",network?"允许当前任务搜索互联网和读取公开网页。后续公开网址不再逐次申请；不会授权文件写入、命令执行或访问内网。":tool.map(s->s.description()).orElse(row.toolName()));
+        result.put("description",network?"允许当前任务搜索互联网、读取公开网页与图片，并将图片保存为本任务的文件成果。后续公开网址不再逐次申请；不授权项目或系统文件写入、命令执行或访问内网。":tool.map(s->s.description()).orElse(row.toolName()));
         if(command)result.put("description","允许当前任务在工作区执行终端命令，后续命令不再逐条申请。命令以当前系统用户权限执行，工作目录不是安全沙箱，可能修改文件或访问网络。仅对当前任务有效。");
         if(browser)result.put("description","允许当前任务操作独立浏览器，包括点击和填写普通文字，可能提交表单或改变网页状态。当前任务内仅申请一次；不会读取日常浏览器的登录状态。");
         result.put("effectClass",tool.map(s->s.effectClass().name().toLowerCase()).orElse("unknown"));

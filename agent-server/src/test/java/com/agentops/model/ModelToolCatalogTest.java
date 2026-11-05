@@ -41,4 +41,15 @@ class ModelToolCatalogTest {
         var explicit=catalog.subList(0,2);
         assertThat(ModelToolCatalog.select(chat("问题"),explicit,List.of(),json)).containsExactlyElementsOf(explicit);
     }
+
+    @Test void pptGoalsExposeSpecialistSchemasWithoutLoadingEveryFileCategory() {
+        var names=new ArrayList<>(catalog);
+        for(String name:List.of("presentation_create","presentation_templates","presentation_inspect","artifact_list","pdf_merge","image_resize","spreadsheet_create"))
+            names.add(ToolRegistry.spec(name,"test",AgentDomain.EffectClass.IDEMPOTENT_WRITE,false,1000,Map.of()));
+        var selected=ModelToolCatalog.select(chat("生成一个项目介绍PPT"),names,List.of(),json);
+        assertThat(selected).extracting(ToolSpec::name).contains("presentation_create","presentation_templates","artifact_list")
+                .doesNotContain("pdf_merge","image_resize","spreadsheet_create");
+        assertThat(ModelToolCatalog.discover("presentations",names)).extracting(ToolSpec::name)
+                .containsExactly("presentation_create","presentation_templates","presentation_inspect");
+    }
 }

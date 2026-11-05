@@ -98,40 +98,35 @@ test('message pagination sends the cursor and preserves page metadata', async ()
 
 test('named deltas are deduplicated and terminal snapshots close the connection', async () => {
   const api = await client()
-  let connection
-  globalThis.EventSource = class {
-    listeners = new Map()
-    closed = false
-    constructor(url) { this.url = url; connection = this }
-    addEventListener(type, callback) { this.listeners.set(type, callback) }
-    close() { this.closed = true }
-    emit(type, data) { this.listeners.get(type)?.({ type, data: JSON.stringify(data) }) }
-  }
+  let connection,requested
+  globalThis.fetch=async(url,options)=>{requested={url,options};return new Response(new ReadableStream({start(c){connection=c}}),{headers:{'Content-Type':'text/event-stream'}})}
+  const emit=(type,data)=>connection.enqueue(new TextEncoder().encode('event: '+type+'\r\ndata: '+JSON.stringify(data)+'\r\n\r\n'))
   const received = [], done = []
-  api.openRunEvents('r1', 4, e => received.push(e), reason => done.push(reason))
-  connection.emit('message.delta', { runId: 'r1', seq: 5, delta: '你好' })
-  connection.emit('message.delta', { runId: 'r1', seq: 5, delta: '你好' })
-  connection.emit('heartbeat', { status: 'running' })
-  connection.emit('run.snapshot', { runId: 'r1', seq: 5, status: 'cancelled' })
+  const close=api.openRunEvents('r1', 4, e => received.push(e), reason => done.push(reason))
+  await new Promise(resolve=>setImmediate(resolve))
+  emit('message.delta', { runId: 'r1', seq: 5, delta: '你好' })
+  emit('message.delta', { runId: 'r1', seq: 5, delta: '你好' })
+  emit('heartbeat', { status: 'running' })
+  emit('run.snapshot', { runId: 'r1', seq: 5, status: 'cancelled' })
+  await new Promise(resolve=>setImmediate(resolve));close()
   assert.deepEqual(received.map(e => e.type), ['message.delta', 'run.snapshot'])
   assert.deepEqual(done, ['run.snapshot'])
-  assert.equal(connection.closed, true)
+  assert.equal(requested.options.signal.aborted,true)
+  assert.doesNotMatch(requested.url,/tenantId|userId|token/)
+  assert.equal(requested.options.headers.Accept,'text/event-stream')
 })
 
 test('a reset snapshot permits a corrected cursor while later replay duplicates are dropped', async () => {
   const api = await client()
   let connection
-  globalThis.EventSource = class {
-    listeners = new Map()
-    constructor() { connection = this }
-    addEventListener(type, callback) { this.listeners.set(type, callback) }
-    close() {}
-    emit(type, data) { this.listeners.get(type)?.({ type, data: JSON.stringify(data) }) }
-  }
+  globalThis.fetch=async()=>new Response(new ReadableStream({start(c){connection=c}}),{headers:{'Content-Type':'text/event-stream'}})
+  const emit=(type,data)=>connection.enqueue(new TextEncoder().encode('event: '+type+'\ndata: '+JSON.stringify(data)+'\n\n'))
   const received = []
-  api.openRunEvents('r1', 999, e => received.push(e), () => {})
-  connection.emit('run.snapshot', { runId: 'r1', seq: 5, reset: true, status: 'running' })
-  connection.emit('message.delta', { runId: 'r1', seq: 6, delta: '新内容' })
+  const close=api.openRunEvents('r1', 999, e => received.push(e), () => {})
+  await new Promise(resolve=>setImmediate(resolve))
+  emit('run.snapshot', { runId: 'r1', seq: 5, reset: true, status: 'running' })
+  emit('message.delta', { runId: 'r1', seq: 6, delta: '新内容' })
+  await new Promise(resolve=>setImmediate(resolve));close()
   assert.deepEqual(received.map(e => e.seq), [5, 6])
 })
 

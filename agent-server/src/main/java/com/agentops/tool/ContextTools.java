@@ -29,7 +29,7 @@ public class ContextTools {
 
     @PostConstruct void register() {
         registry.register(ToolRegistry.spec("tool_discover",
-                "按需展开工具参数。分组web/project/knowledge/skills/mcp/reports/messaging/all；权限不会因此扩大。",
+                "按需展开工具参数。分组web/project/knowledge/skills/mcp/reports/messaging/presentations/spreadsheets/documents/media/archives/files/all；权限不会因此扩大。",
                 EffectClass.READ_ONLY,false,12000,Map.of("group",ToolSpec.PropertySpec.req("string","工具分组"))),
                 (owner,args,ctx) -> {
                     var row=runs.findByIdOwner(owner,ctx.runId()).orElseThrow();

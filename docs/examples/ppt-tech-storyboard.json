@@ -1,0 +1,176 @@
+{
+  "theme": "tech",
+  "slides": [
+    {
+      "layout": "cover",
+      "title": "人工智能\n走进日常生活",
+      "subtitle": "医疗、教育、工作与治理\n用证据观察变化",
+      "imageArtifactId": "$COVER_IMAGE",
+      "imageFit": "cover",
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n全部数据来自IMF、Nature系列期刊、Stanford HAI与欧盟委员会公开来源，末页附完整出处。"
+    },
+    {
+      "layout": "statement",
+      "title": "这份报告的主要判断",
+      "body": "AI正在改变任务，\n人的判断仍不可替代",
+      "caption": "使用监管记录、随机实验和研究报告，观察收益与边界。",
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n综合五项已核验来源的结论，不引用未核实的预测数字。"
+    },
+    {
+      "layout": "metric",
+      "title": "工作中的AI暴露",
+      "metric": "40%",
+      "label": "全球就业的AI暴露估计",
+      "body": "暴露描述任务可能受到影响，\n不等于这些岗位将被替代。",
+      "caption": "IMF · 2024-01-14",
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n来源：IMF总裁Kristalina Georgieva署名博客（2024年1月14日），基于IMF工作人员分析：全球约40%就业暴露于AI。\n资料来源（作者提供，尚需事实核验）：\nIMF Blog, 2024-01-14"
+    },
+    {
+      "layout": "table",
+      "title": "医疗：从概念进入产品",
+      "rows": [
+        [
+          "指标",
+          "研究记录"
+        ],
+        [
+          "AI/ML器械授权记录",
+          "1,016项"
+        ],
+        [
+          "去重后的独立器械",
+          "736项"
+        ],
+        [
+          "涉及影像的器械",
+          "628项"
+        ],
+        [
+          "涉及图像算法的用途",
+          "612项"
+        ],
+        [
+          "最常见专科：放射科",
+          "628项"
+        ]
+      ],
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n来源：Singh等，npj Digital Medicine第8卷388号（2025年7月1日发表），基于截至2024年12月20日的FDA授权数据。\n资料来源（作者提供，尚需事实核验）：\nnpj Digital Medicine, 2025-07-01"
+    },
+    {
+      "layout": "image_split",
+      "title": "教育：一次随机实验",
+      "body": "AI导师与课堂对照\n学习增益超过对照两倍\n样本：194名学生",
+      "imageArtifactId": "$EDUCATION_IMAGE",
+      "imageFit": "cover",
+      "caption": "配图为场景示意；结论来自 Scientific Reports（2025）",
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n来源：Kestin等，Scientific Reports 15:17458（2025年6月3日），样本N=194名大学生。\n资料来源（作者提供，尚需事实核验）：\nScientific Reports, 2025-06-03"
+    },
+    {
+      "layout": "chart",
+      "title": "AI暴露程度存在差异",
+      "chart": {
+        "type": "bar",
+        "categories": [
+          "发达经济体",
+          "新兴市场",
+          "低收入国家"
+        ],
+        "series": [
+          {
+            "name": "岗位暴露估计（%）",
+            "values": [
+              60,
+              40,
+              26
+            ]
+          }
+        ]
+      },
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n来源：IMF总裁Kristalina Georgieva署名博客（2024年1月14日），基于IMF工作人员分析：全球约40%就业暴露于AI。\n资料来源（作者提供，尚需事实核验）：\nIMF Blog, 2024-01-14"
+    },
+    {
+      "layout": "comparison",
+      "title": "机会与分化同时存在",
+      "leftTitle": "可能的机会",
+      "left": [
+        "部分任务更高效",
+        "经验较少者可能获益更多"
+      ],
+      "rightTitle": "需要管理的风险",
+      "right": [
+        "技能与基础设施不足",
+        "资本回报可能扩大差距"
+      ],
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n来源：IMF博客（2024年1月14日），对暴露岗位受益与风险两类情形的原文判断。\n资料来源（作者提供，尚需事实核验）：\nIMF Blog, 2024-01-14\n1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n来源：IMF博客（2024年1月14日）关于国别与国内分配效应的原文。\n资料来源（作者提供，尚需事实核验）：\nIMF Blog, 2024-01-14"
+    },
+    {
+      "layout": "process",
+      "title": "把能力变成可用结果",
+      "steps": [
+        {
+          "title": "核对输入",
+          "body": "确认资料来源、时间与口径"
+        },
+        {
+          "title": "辅助执行",
+          "body": "把重复任务交给工具"
+        },
+        {
+          "title": "人工复核",
+          "body": "检查结果与关键决定"
+        }
+      ],
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n综合五项已核验来源的结论，不引用未核实的预测数字。"
+    },
+    {
+      "layout": "metric",
+      "title": "能力迭代速度",
+      "metric": "+67.3",
+      "label": "SWE-bench得分提升\n单位：百分点",
+      "body": "2025 AI Index 报告的年度比较。\n基准提升不代表所有真实任务都能完成。",
+      "caption": "Stanford HAI · AI Index 2025",
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n来源：Stanford HAI《2025 AI Index Report》Top Takeaways第1条。\n资料来源（作者提供，尚需事实核验）：\nStanford HAI, 2025 AI Index Report"
+    },
+    {
+      "layout": "timeline",
+      "title": "治理：规则逐步落地",
+      "steps": [
+        {
+          "date": "2025.02",
+          "title": "禁止特定AI用途",
+          "body": "部分条款开始适用"
+        },
+        {
+          "date": "2025.08",
+          "title": "通用模型义务",
+          "body": "GPAI相关要求"
+        },
+        {
+          "date": "2026.08",
+          "title": "透明度规则",
+          "body": "适用范围以官方最新文本为准"
+        }
+      ],
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n来源：欧盟委员会“Shaping Europe's digital future”AI Act官方页面，Regulation (EU) 2024/1689。\n资料来源（作者提供，尚需事实核验）：\nEuropean Commission, AI Act"
+    },
+    {
+      "layout": "statement",
+      "title": "结论",
+      "body": "让AI扩大人的能力，\n让证据约束每个结论",
+      "caption": "关注可检验的收益，保留人工判断、数据保护与透明度。",
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n综合五项已核验来源的结论，不引用未核实的预测数字。"
+    },
+    {
+      "layout": "bullets",
+      "title": "资料来源",
+      "bullets": [
+        "IMF Blog（2024）：全球就业的AI暴露估计",
+        "npj Digital Medicine（2025）：FDA器械授权研究",
+        "Scientific Reports（2025）：AI辅导随机实验",
+        "Stanford HAI：2025 AI Index Report",
+        "欧盟委员会：AI Act（2024/1689）"
+      ],
+      "notes": "1.7.2013\nClick to edit Master text styles\nSecond level\nThird level\nFourth level\nFifth level\n‹#›\n五项来源均为本次逐篇读取原文核验；麦肯锡与Pew页面未能取得原文，未在正文中引用。"
+    }
+  ]
+}

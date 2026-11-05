@@ -72,6 +72,7 @@ public class RunApplicationService {
     }
 
     public SessionView createSession(Principal owner, String title, UUID projectId) {
+        if(title!=null&&(title.length()>120||title.codePoints().anyMatch(Character::isISOControl)))throw new BadRequestException("会话名称不能超过120字或包含控制字符");
         var row = projectId==null ? sessions.create(owner, UUID.randomUUID(), title == null ? "" : title)
                 : sessions.createProjectSession(owner,UUID.randomUUID(),title,projectId);
         return toSessionView(row);
@@ -98,6 +99,7 @@ public class RunApplicationService {
     }
 
     public List<SessionView> searchSessions(Principal owner, int limit, String query, boolean archived) {
+        if(query!=null&&query.length()>200)throw new BadRequestException("搜索内容不能超过200字");
         var rows = sessions.search(owner, Math.min(Math.max(limit,1),100), query == null ? "" : query.strip(), archived);
         var active = runs.activeForSessions(owner, rows.stream().map(SessionRepo.SessionRow::id).toList());
         return rows.stream().map(row -> {
@@ -202,6 +204,12 @@ public class RunApplicationService {
     }
 
     public CreateRunResponse createRun(Principal owner, UUID sessionId, CreateRunRequest req) {
+        if(req==null)throw new BadRequestException("缺少任务内容");
+        if(req.message()!=null&&req.message().length()>32000)throw new BadRequestException("任务文本不能超过32000字，请通过文件导入资料");
+        if(req.requestKey()!=null&&req.requestKey().length()>128)throw new BadRequestException("请求标识不能超过128字");
+        if(req.taskType()!=null&&req.taskType().length()>64)throw new BadRequestException("任务类型不能超过64字");
+        if(req.requiredArtifactKinds()!=null&&(req.requiredArtifactKinds().size()>20||req.requiredArtifactKinds().stream().anyMatch(k->k==null||k.isBlank()||k.length()>64)))throw new BadRequestException("成果类型最多20项，每项须为1～64字");
+        if(req.contractRequirements()!=null&&(req.contractRequirements().size()>32||json.write(req.contractRequirements()).length()>16000))throw new BadRequestException("任务约束过多，请缩小范围");
         if (req.message() == null || req.message().isBlank()) {
             throw new BadRequestException("message 不能为空");
         }
@@ -302,13 +310,6 @@ public class RunApplicationService {
                 json.tree(row.configSnapshotJson()).path("planRunId").asText(""));
     }
 
-    public RunView getRunInSession(Principal owner, UUID sessionId, UUID runId) {
-        var row = runs.findByIdOwner(owner, runId)
-                .filter(r -> r.sessionId().equals(sessionId))
-                .orElseThrow(() -> new NotFoundException("任务不存在"));
-        return toRunView(row);
-    }
-
     // ==================== 运行中命令（文档 29） ====================
 
     /** 补充输入：回答澄清问题后让 WAITING_USER 的任务回到 QUEUED。 */
@@ -340,6 +341,7 @@ public class RunApplicationService {
     @Transactional
     public Map<String, Object> supplement(Principal owner, UUID sessionId, UUID runId,
                                           SupplementRequest req) {
+        if(req==null||req.answer()==null||req.answer().isBlank()||req.answer().length()>32000)throw new BadRequestException("补充内容须为1～32000字");
         var row = runs.lockByOwner(owner, runId)
                 .filter(r -> r.sessionId().equals(sessionId))
                 .orElseThrow(() -> new NotFoundException("任务不存在"));
@@ -371,15 +373,6 @@ public class RunApplicationService {
                 json.write(Map.of("content", req.answer())), 1, null, null, Instant.now()));
 
         return Map.of("ok", true, "runId", runId.toString(), "seq", seq);
-    }
-
-    /** 进度查询（只读，不改变任务状态）。 */
-    public Map<String, Object> progress(Principal owner, UUID runId) {
-        var view = getRun(owner, runId);
-        return Map.of(
-                "runId", view.runId(), "status", view.status(), "phase", view.phase(),
-                "tokenUsed", view.tokenUsed(),
-                "question", view.questionId() == null ? "" : String.valueOf(view.questionText()));
     }
 
     /** 请求取消（文档 16.5：持久化 cancel_requested_at，禁止新 attempt）。 */

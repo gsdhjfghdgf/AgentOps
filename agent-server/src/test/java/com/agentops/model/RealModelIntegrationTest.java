@@ -143,8 +143,23 @@ class RealModelIntegrationTest {
         org.mockito.Mockito.when(client.stream(org.mockito.ArgumentMatchers.any(ModelSettingsService.ChatConfig.class),org.mockito.ArgumentMatchers.anyList(),
                 org.mockito.ArgumentMatchers.anyList(),org.mockito.ArgumentMatchers.anyInt(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any()))
                 .thenReturn(new OpenAiChatClient.ChatResult(null,List.of(new ModelPort.ToolCall("c1","send_email","{\"to\":")),null,false));
-        var result=new OpenAiModelPort(client,props,json,settings).next(null,"",List.of(),List.of(),control,s->{});
-        assertThat(result).isInstanceOf(ModelDecision.AskUser.class);
+        assertThatThrownBy(()->new OpenAiModelPort(client,props,json,settings).next(null,"",List.of(),List.of(),control,s->{}))
+                .isInstanceOfSatisfying(OpenAiChatClient.ModelUnavailableException.class,e->{
+                    assertThat(e.code()).isEqualTo("MODEL_INVALID_RESPONSE");assertThat(e.retryable()).isTrue();
+                });
+    }
+
+    @Test void outputLimitIsAnInternalRetryableFailureWithKnownUsageNotAUserQuestion() {
+        var client=org.mockito.Mockito.mock(OpenAiChatClient.class);
+        var usage=new OpenAiChatClient.ChatUsage(29000,2000);
+        org.mockito.Mockito.when(client.stream(org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.anyList(),
+                org.mockito.ArgumentMatchers.anyList(),org.mockito.ArgumentMatchers.anyInt(),org.mockito.ArgumentMatchers.any(),org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new OpenAiChatClient.ChatResult(null,List.of(new ModelPort.ToolCall("c","presentation_create","{\"deckJson\":")),usage,false,"length"));
+        assertThatThrownBy(()->new OpenAiModelPort(client,props,json,settings).next(null,"",List.of(),List.of(),control,s->{}))
+                .isInstanceOfSatisfying(OpenAiChatClient.ModelUnavailableException.class,e->{
+                    assertThat(e.code()).isEqualTo("MODEL_OUTPUT_TRUNCATED");assertThat(e.reportedUsage()).isEqualTo(usage);
+                    assertThat(e.retryable()).isTrue();assertThat(e.getMessage()).doesNotContain("deckJson");
+                });
     }
 
     @Test void clarificationPausesRunAndDoesNotBecomeFinalAnswer() {

@@ -1,5 +1,6 @@
 /** Public route facade. Transport and SSE lifecycles live in services/. */
 import { api, API_BASE, headers, parse } from './services/httpClient'
+import {authGeneration} from './services/authSession'
 export { api, API_BASE, identity, saveIdentity } from './services/httpClient'
 export { openRunEvents } from './services/runEvents'
 
@@ -69,12 +70,6 @@ export interface ApprovalItem {
   arguments?: Record<string, unknown>
 }
 
-export interface ApprovalDetail extends ApprovalItem {
-  runId: string
-  status: string
-  reason?: string
-}
-
 export interface RunEvent {
   runId: string
   seq: number
@@ -83,7 +78,7 @@ export interface RunEvent {
   [k: string]: unknown
 }
 
-// ==================== SSE（EventSource 无法带 header，主体走 query） ====================
+// ==================== SSE（fetch 流携带登录凭据，支持游标重连） ====================
 
 
 export async function createSession(title: string, projectId: string | null = null): Promise<string> {
@@ -94,10 +89,6 @@ export async function createSession(title: string, projectId: string | null = nu
 export async function listSessions(query = '', archived = false): Promise<SessionItem[]> {
   const r = await api.get<{ sessions: SessionItem[] }>(`/api/sessions?limit=100&query=${encodeURIComponent(query)}&archived=${archived}`)
   return r.sessions
-}
-
-export async function listMessages(sessionId: string): Promise<MessageItem[]> {
-  return (await listMessagePage(sessionId)).messages
 }
 
 export const updateSession = (id: string, changes: { title?: string; pinned?: boolean; archived?: boolean }) =>
@@ -175,14 +166,21 @@ export function decideApproval(approvalId: string, decision: 'approved' | 'rejec
 
 /** 产物下载：fetch 成 blob 后用 a[download] 触发保存 */
 export async function downloadArtifact(objectId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/artifacts/${objectId}/download`, {
+  return downloadPath(`/api/artifacts/${encodeURIComponent(objectId)}/download`,`${objectId}.md`)
+}
+export async function downloadConversation(sessionId:string):Promise<void>{return downloadPath(`/api/sessions/${encodeURIComponent(sessionId)}/export`,'会话.md')}
+async function downloadPath(path:string,fallback:string):Promise<void>{
+  const generation=authGeneration()
+  const res = await fetch(API_BASE+path, {
     headers: headers(),
   })
-  if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`)
+  if (!res.ok) await parse(res)
   const disposition = res.headers.get('Content-Disposition') || ''
   const match = /filename\*=UTF-8''([^;]+)/i.exec(disposition) || /filename="?([^";]+)"?/i.exec(disposition)
-  const name = match ? decodeURIComponent(match[1]) : `${objectId}.md`
+  let name=fallback
+  if(match)try{name=decodeURIComponent(match[1])}catch{/* Keep the safe fallback for malformed response metadata. */}
   const blob = await res.blob()
+  if(generation!==authGeneration())throw new Error('账号已切换，已取消原账号文件下载')
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

@@ -15,6 +15,9 @@ interface Window {
     setWindowTheme?: (theme: 'dark' | 'light') => void
     selectDirectory?: () => Promise<string | null>
     notify?: (title:string,body:string) => void
+    readLoginToken?: () => Promise<string|null>
+    readRegistrationKey?: () => Promise<string|null>
+    saveLoginToken?: (token:string|null) => Promise<void>
   }
   /** main.cjs did-finish-load 时注入的 API 地址 */
   __AGENT_DESKTOP__?: { apiBase: string }

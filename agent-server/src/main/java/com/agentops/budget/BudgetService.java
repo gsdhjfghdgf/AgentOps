@@ -33,6 +33,11 @@ public class BudgetService {
         this.clock = clock;
     }
 
+    /** Coarse prompt estimate plus the configured output upper bound. */
+    public long modelReservationTokens() {
+        return 2000L + Math.max(2000, props.budget().maxOutputTokensPerCall());
+    }
+
     /** run 级预算账户的周期键。 */
     public String runPeriodKey(UUID runId) {
         return "run:" + runId;
